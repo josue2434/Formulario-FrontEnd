@@ -19,3 +19,8 @@ If you are developing a production application, we recommend using TypeScript wi
 
 ## Rama Josue
 Este es mi primer cambio de prueba en la rama `josue`.
+
+
+
+## Nueva prueba
+Probando el bypass de admin.
