@@ -26,3 +26,6 @@ Este es mi primer cambio de prueba en la rama `josue`.
 Probando el bypass de admin.
 ## Rama Johan
 Este es un cambio de prueba de Johan en su rama.
+
+## Rama Jose
+Este es un cambio de prueba de Jose en su rama.
