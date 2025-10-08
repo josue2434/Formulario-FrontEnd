@@ -1,9 +1,9 @@
 // src/router/AlumnoRouter.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
-import AlumnoLayout from "../alumno/AlumnoLayout";
+import AlumnoLayout from "../alumno/alumnoLayout";
 import DashboardAlumno from "../alumno/DashboardAlumno";
-import AlumnoPerfil from "../alumno/AlumnoPerfil";
-import AlumnoCursos from "../alumno/AlumnoCursos";
+import AlumnoPerfil from "../alumno/alumnoPerfil";
+import AlumnoCursos from "../alumno/alumnoCursos";
 
 export default function AlumnoRouter() {
   return (
