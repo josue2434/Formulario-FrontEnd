@@ -37,14 +37,13 @@ export default function Login() {
       // Redirección por rol (si el usuario puede ser docente/admin)
       await resolveRoleAndRedirect(navigate);
     }catch (err) {
-  const res = err?.response;
-  console.log("Signup error:", res?.status, res?.data);
-  const msg =
-    res?.data?.message ||
-    (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
-    "No fue posible crear la cuenta";
-  setSignupError(msg);
-
+      const res = err?.response;
+      console.error("Login error:", res?.status, res?.data);
+      const msg =
+        res?.data?.message ||
+        (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
+        "Correo o clave incorrectos.";
+      setLoginError(msg);
     } finally {
       setLoginLoading(false);
     }
