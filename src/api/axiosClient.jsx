@@ -4,7 +4,7 @@ import axios from "axios";
 // Configuración principal de axios
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL, // Defínelo en tu .env (ej. http://localhost:8000/api)
-  withCredentials: false, // importante si usas Laravel Sanctum
+  withCredentials: false, 
 });
 
 // Interceptor: agrega token en headers si existe
