@@ -1,16 +1,13 @@
 // src/alumno/AlumnoLayout.jsx
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import useAlumnoGuard from "./useAlumnoGuard";
-
-const linkBase =
-  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-indigo-50";
-const active = "bg-indigo-100 text-indigo-800";
-const idle = "text-gray-700";
+import { LayoutDashboard, User, BookOpen, LogOut } from "lucide-react";
 
 export default function AlumnoLayout() {
   const { logout } = useAuth();
   const ready = useAlumnoGuard();
+  const navigate = useNavigate();
 
   if (!ready) {
     return (
@@ -20,33 +17,83 @@ export default function AlumnoLayout() {
     );
   }
 
+  const menuItems = [
+    {
+      path: "/alumno",
+      label: "Inicio",
+      icon: LayoutDashboard,
+      // Para que NavLink lo tome como "end" en la ruta base:
+      end: true,
+    },
+    {
+      path: "/alumno/perfil",
+      label: "Perfil",
+      icon: User,
+    },
+    {
+      path: "/alumno/cursos",
+      label: "Mis cursos",
+      icon: BookOpen,
+    },
+  ];
+
+  const handleLogout = async () => {
+    try {
+      await logout(); // limpia tu contexto / token si lo manejas aquí
+    } finally {
+      // por si tu logout no hace redirect, garantizamos la salida
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/login");
+    }
+  };
+
   return (
     <div className="min-h-screen flex bg-gray-50">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-white border-r shadow-sm p-4">
-        <div className="mb-6">
-          <h2 className="text-xl font-bold">🎓 Alumno</h2>
-          <p className="text-xs text-gray-500">Navegación</p>
+      {/* SIDEBAR con el diseño estilo Docente */}
+      <aside className="w-64 min-h-screen bg-white border-r border-gray-200 flex flex-col">
+        {/* Header del sidebar */}
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+              <User className="w-6 h-6 text-indigo-600" />
+            </div>
+            <span className="font-semibold text-gray-800">Alumno</span>
+          </div>
         </div>
 
-        <nav className="space-y-2">
-          <NavLink to="/alumno" end className={({isActive}) => `${linkBase} ${isActive?active:idle}`}>
-            🏠 Inicio
-          </NavLink>
-          <NavLink to="/alumno/perfil" className={({isActive}) => `${linkBase} ${isActive?active:idle}`}>
-            👤 Perfil
-          </NavLink>
-          <NavLink to="/alumno/cursos" className={({isActive}) => `${linkBase} ${isActive?active:idle}`}>
-            📚 Mis cursos
-          </NavLink>
+        {/* Menú de navegación */}
+        <nav className="flex-1 p-4">
+          <ul className="space-y-2">
+            {menuItems.map(({ path, label, icon: Icon, end }) => (
+              <li key={path}>
+                <NavLink
+                  to={path}
+                  end={end}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      isActive
+                        ? "bg-indigo-600 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`
+                  }
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="font-medium">{label}</span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
         </nav>
 
-        <div className="mt-8">
+        {/* Footer del sidebar */}
+        <div className="p-4 border-t border-gray-200">
           <button
-            onClick={async () => { await logout(); window.location.href = "/login"; }}
-            className="w-full rounded-lg bg-red-500 px-3 py-2 text-white font-semibold hover:bg-red-600"
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-4 py-3 w-full text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            Cerrar sesión
+            <LogOut className="w-5 h-5 text-red-500" />
+            <span className="font-medium">Cerrar sesión</span>
           </button>
         </div>
       </aside>
