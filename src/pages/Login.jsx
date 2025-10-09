@@ -39,15 +39,21 @@ export default function Login() {
 
       // Redirección por rol (alumno/docente/admin)
       await resolveRoleAndRedirect(navigate);
-      console.log("[LOGIN] Redirección por rol OK");
-    } catch (err) {
-      const res = err?.response;
-      console.error("[LOGIN] Error:", res?.status, res?.data, err?.message);
-      const msg =
-        res?.data?.message ||
-        (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
-        "No fue posible iniciar sesión";
-      setLoginError(msg); // ← ahora existe y se muestra arriba del form
+   try {
+  await resolveRoleAndRedirect(navigate);
+  console.log("[LOGIN] Redirección por rol OK");
+} catch (err) {
+  const res = err?.response;
+  console.error("Login error:", res?.status, res?.data);
+  const msg =
+    res?.data?.message ||
+    (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
+    "No fue posible iniciar sesión";
+  setLoginError(msg);
+} finally {
+  setLoginLoading(false);
+}
+
     } finally {
       setLoginLoading(false);
     }
