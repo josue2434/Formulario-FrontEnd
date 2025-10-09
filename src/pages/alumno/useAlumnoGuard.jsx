@@ -1,7 +1,7 @@
 // src/alumno/useAlumnoGuard.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api/axiosClient";
+import api from "../../api/axiosClient";
 
 export default function useAlumnoGuard() {
   const [ready, setReady] = useState(false);
