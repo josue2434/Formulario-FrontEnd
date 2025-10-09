@@ -11,7 +11,7 @@ export default function Login() {
   // ---- Login state ----
   const [loginForm, setLoginForm] = useState({ correo: "", clave: "" });
   const [showPwdLogin, setShowPwdLogin] = useState(false);
-  const [loginError, setLoginError] = useState("");
+  const [loginError, setLoginError] = useState("");     // ← FALTABA
   const [loginLoading, setLoginLoading] = useState(false);
 
   // ---- Signup state ----
@@ -33,17 +33,27 @@ export default function Login() {
     setLoginError("");
     setLoginLoading(true);
     try {
-      await login(loginForm.correo, loginForm.clave);
-      // Redirección por rol (si el usuario puede ser docente/admin)
+      console.log("[LOGIN] Payload:", { correo: loginForm.correo, clave: "(oculta)" });
+      const data = await login(loginForm.correo, loginForm.clave);
+      console.log("[LOGIN] /api/login OK:", data);
+
+      // Redirección por rol (alumno/docente/admin)
       await resolveRoleAndRedirect(navigate);
-    }catch (err) {
-      const res = err?.response;
-      console.error("Login error:", res?.status, res?.data);
-      const msg =
-        res?.data?.message ||
-        (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
-        "Correo o clave incorrectos.";
-      setLoginError(msg);
+   try {
+  await resolveRoleAndRedirect(navigate);
+  console.log("[LOGIN] Redirección por rol OK");
+} catch (err) {
+  const res = err?.response;
+  console.error("Login error:", res?.status, res?.data);
+  const msg =
+    res?.data?.message ||
+    (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
+    "No fue posible iniciar sesión";
+  setLoginError(msg);
+} finally {
+  setLoginLoading(false);
+}
+
     } finally {
       setLoginLoading(false);
     }
@@ -60,15 +70,16 @@ export default function Login() {
     setSignupError("");
     setSignupLoading(true);
     try {
-      // Registrar alumno -> el backend devuelve token + usuario + alumno
-      await signupAlumno(signupForm);
-      // Como es alumno por defecto, vámonos directo a /alumno
+      console.log("[SIGNUP] Payload:", { ...signupForm, clave: "(oculta)", foto_perfil: !!signupForm.foto_perfil });
+      const data = await signupAlumno(signupForm);
+      console.log("[SIGNUP] /api/singup/usuario/alumno OK:", data);
       navigate("/alumno", { replace: true });
     } catch (err) {
-      // Mostrar mensajes de validación del backend si vienen
+      const res = err?.response;
+      console.error("[SIGNUP] Error:", res?.status, res?.data, err?.message);
       const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.errors && Object.values(err.response.data.errors).flat().join(" | ") ||
+        res?.data?.message ||
+        (res?.data?.errors && Object.values(res.data.errors).flat().join(" | ")) ||
         "No fue posible crear la cuenta";
       setSignupError(msg);
     } finally {
@@ -82,13 +93,17 @@ export default function Login() {
         {/* Tabs */}
         <div className="flex">
           <button
-            className={`flex-1 py-3 text-center font-medium rounded-t-2xl ${tab === "login" ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"}`}
+            className={`flex-1 py-3 text-center font-medium rounded-t-2xl ${
+              tab === "login" ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"
+            }`}
             onClick={() => setTab("login")}
           >
             Iniciar sesión
           </button>
           <button
-            className={`flex-1 py-3 text-center font-medium rounded-t-2xl ${tab === "signup" ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"}`}
+            className={`flex-1 py-3 text-center font-medium rounded-t-2xl ${
+              tab === "signup" ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"
+            }`}
             onClick={() => setTab("signup")}
           >
             Crear cuenta (Alumno)
@@ -102,7 +117,9 @@ export default function Login() {
               <h1 className="text-2xl font-bold text-gray-800 text-center">Iniciar sesión</h1>
 
               {loginError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{loginError}</div>
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {loginError}
+                </div>
               )}
 
               <div>
@@ -150,7 +167,9 @@ export default function Login() {
               <h1 className="text-2xl font-bold text-gray-800 text-center">Crear cuenta (Alumno)</h1>
 
               {signupError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{signupError}</div>
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {signupError}
+                </div>
               )}
 
               <div>
@@ -224,7 +243,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={signupLoading}
-                className="w-full rounded-xl bg-indigo-600 px-4 py-2 font-semibold text-white shadow hover:bg-indigo-700 disabled:opacity-60"
+                className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-white font-semibold shadow hover:bg-indigo-700 disabled:opacity-60"
               >
                 {signupLoading ? "Creando cuenta…" : "Crear cuenta"}
               </button>

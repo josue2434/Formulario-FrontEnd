@@ -1,29 +1,35 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+// src/App.jsx
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
+
+// Páginas base
 import Login from "./pages/Login";
-import DashboardAlumno from "./pages/DashboardAlumno";
-import DashboardDocente from "./pages/DashboardDocente";
 import DashboardSuper from "./pages/DashboardSuper";
 
-function Home() {
-  return (
-    <div className="min-h-screen grid place-items-center p-6">
-      <h1 className="text-2xl font-bold">Home</h1>
-      <a className="mt-4 underline" href="/login">Ir a Login</a>
-    </div>
-  );
-}
+// Routers
+import AlumnoRouter from "./router/AlumnoRouter";
+import DocenteRouter from "./router/DocenteRouter";
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Inicio */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/alumno" element={<DashboardAlumno />} />
-          <Route path="/docente" element={<DashboardDocente />} />
-          <Route path="/admin"   element={<DashboardSuper />} />
-          <Route index element={<Home />} />
+
+          {/* Alumno con subrutas */}
+          <Route path="/alumno/*" element={<AlumnoRouter />} />
+
+          {/* Docente con subrutas */}
+          <Route path="/docente/*" element={<DocenteRouter />} />
+
+          {/* Admin (opcional) */}
+          <Route path="/admin" element={<DashboardSuper />} />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
