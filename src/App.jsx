@@ -4,11 +4,11 @@ import { AuthProvider } from "./auth/AuthContext";
 
 // Páginas base
 import Login from "./pages/Login";
-import DashboardSuper from "./pages/DashboardSuper";
 
 // Routers
 import AlumnoRouter from "./router/AlumnoRouter";
 import DocenteRouter from "./router/DocenteRouter";
+import AdminRouter from "./router/AdminRouter";
 
 export default function App() {
   return (
@@ -25,8 +25,8 @@ export default function App() {
           {/* Docente con subrutas */}
           <Route path="/docente/*" element={<DocenteRouter />} />
 
-          {/* Admin (opcional) */}
-          <Route path="/admin" element={<DashboardSuper />} />
+          {/* Admin con subrutas */}
+          <Route path="/admin/*" element={<AdminRouter />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/login" replace />} />
