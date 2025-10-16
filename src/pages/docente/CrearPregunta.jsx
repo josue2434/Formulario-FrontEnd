@@ -397,7 +397,7 @@ const guardar = async (e) => {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">Contenido (enunciado)*</label>
-              <span className="text-xs text-gray-500">Markdown + LaTeX (KaTeX) + Imágenes</span>
+              
             </div>
             <QuestionEditor value={pregunta} onChange={setPregunta} />
             <p className="text-xs text-gray-500">
