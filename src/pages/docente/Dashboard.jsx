@@ -28,6 +28,7 @@ export default function Dashboard() {
           <h3 className="text-lg font-semibold text-gray-700 mb-2">Alumnos</h3>
           <p className="text-3xl font-bold text-purple-600">230</p>
         </div>
+        
       </div>
 
     

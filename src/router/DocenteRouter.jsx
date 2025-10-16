@@ -7,6 +7,7 @@ import Dashboard from "../pages/docente/Dashboard";
 import Perfil from "../pages/docente/Perfil";
 import BancoPreguntas from "../pages/docente/BancoPreguntas";
 import CrearActividad from "../pages/docente/CrearActividad";
+import CrearPregunta  from "../pages/docente/CrearPregunta";
 
 export default function DocenteRouter() {
   return (
@@ -22,6 +23,8 @@ export default function DocenteRouter() {
         <Route path="banco-preguntas" element={<BancoPreguntas />} />
         {/* /docente/crear-actividad */}
         <Route path="crear-actividad" element={<CrearActividad />} />
+        {/* /docente/crear-pregunta */}
+         <Route path="crear-pregunta" element={<CrearPregunta />} />
         {/* Fallback dentro de /docente */}
         <Route path="*" element={<Navigate to="." replace />} />
       </Route>
