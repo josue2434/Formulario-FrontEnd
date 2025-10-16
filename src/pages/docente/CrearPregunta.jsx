@@ -51,6 +51,7 @@ export default function CrearPregunta() {
           difs: `http://localhost:8000/api/dificultades`,
           temas: `http://localhost:8000/api/temas`,
           tipos: `http://localhost:8000/api/tipo-preguntas`,
+          
         };
 
         const [r1, r2, r3, r4] = await Promise.all([
@@ -130,96 +131,175 @@ export default function CrearPregunta() {
   const prettyTema = temasList.find((t) => String(t.id) === String(tema))?.nombre || "";
 
   // ===== Guardar (con extracción de ID robusta) =====
-  const guardar = async (e) => {
-    e.preventDefault();
-    setMsg(null);
-    setSaving(true);
+const guardar = async (e) => {
+  e.preventDefault();
+  setMsg(null);
+  setSaving(true);
 
-    try {
-      const token = localStorage.getItem("token");
+  const API = "http://localhost:8000/api";
+  const token = localStorage.getItem("token");
 
-      // 1) Crear PREGUNTA
-      const preguntaRes = await fetch(`http://localhost:8000/api/preguntas`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          texto_pregunta: pregunta,
-          explicacion,
-          id_tema: tema ? Number(tema) : null,
-          id_nivel_bloom: bloomNivel ? Number(bloomNivel) : null,
-          id_dificultad: dificultad ? Number(dificultad) : null,
-          id_tipo_pregunta: tipo ? Number(tipo) : (isOpcionMultiple ? 1 : isVerdaderoFalso ? 2 : 3),
-          estado: 1,
-        }),
-      });
+  if (!pregunta.trim()) {
+    setMsg({ ok: false, text: "El enunciado no puede estar vacío." });
+    setSaving(false);
+    return;
+  }
+  if (!tipo) {
+    setMsg({ ok: false, text: "Selecciona el tipo de pregunta." });
+    setSaving(false);
+    return;
+  }
 
-      const bodyText = await preguntaRes.text();
-      let preguntaData = {};
-      try { preguntaData = JSON.parse(bodyText); } catch {}
-
-      if (!preguntaRes.ok) {
-        const msg = preguntaData?.message || "Error al crear la pregunta";
-        throw new Error(msg);
-      }
-
-      // Extrae ID de forma tolerante
-      const extractId = (data, res) => {
-        const candidates = [
-          data?.id,
-          data?.data?.id,
-          data?.pregunta?.id,
-          data?.data?.pregunta?.id,
-          data?.payload?.id,
-          data?.result?.id,
-          data?.resource?.id,
-        ].filter((v) => v !== undefined && v !== null);
-        if (candidates.length) return Number(candidates[0]);
-        const loc = res.headers.get("Location") || res.headers.get("location");
-        if (loc) {
-          const m = loc.match(/\/(\d+)(?:\?.*)?$/);
-          if (m) return Number(m[1]);
-        }
-        return null;
-      };
-
-      const preguntaId = extractId(preguntaData, preguntaRes);
-
-      // 2) Guardar opciones si hay ID y el tipo lo requiere
-      if (preguntaId && (isOpcionMultiple || isVerdaderoFalso)) {
-        const opcionesPayload = Object.entries(opciones)
-          .filter(([_, texto]) => (texto || "").trim() !== "")
-          .map(([clave, texto]) => ({
-            id_pregunta: preguntaId,
-            texto_opcion: texto,
-            es_correcta: correcta === clave ? 1 : 0,
-          }));
-
-        for (const opcion of opcionesPayload) {
-          const res = await fetch(`http://localhost:8000/api/opcion-respuestas`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(opcion),
-          });
-          if (!res.ok) console.warn("No se pudo guardar una opción:", await res.text());
-        }
-      } else if (!preguntaId && (isOpcionMultiple || isVerdaderoFalso)) {
-        console.warn("La pregunta se creó pero la API no devolvió ID; opciones no guardadas.", { bodyText });
-      }
-
-      setMsg({ ok: true, text: "✅ Pregunta creada correctamente" });
-      navigate("/docente/banco-preguntas"); // redirección inmediata
-    } catch (err) {
-      setMsg({ ok: false, text: err.message || "Error inesperado" });
-    } finally {
-      setSaving(false);
-    }
+  const headersAuth = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+
+  // Helpers
+  const safeJson = async (res) => {
+    try { return await res.clone().json(); } catch { return null; }
+  };
+  const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+  const extractId = (res, data) => {
+    if (data) {
+      if (data.id) return Number(data.id);
+      if (data.data?.id) return Number(data.data.id);
+      if (data.pregunta?.id) return Number(data.pregunta.id);
+    }
+    const loc = res.headers?.get?.("Location") || res.headers?.get?.("location");
+    if (loc) {
+      const m = loc.match(/\/preguntas\/(\d+)/) || loc.match(/\/(\d+)\s*$/);
+      if (m) return Number(m[1]);
+    }
+    return null;
+  };
+
+  const getListadoPreguntas = async () => {
+    const listRes = await fetch(`${API}/preguntas`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const j = await safeJson(listRes);
+    if (Array.isArray(j)) return j;
+    if (j?.data && Array.isArray(j.data)) return j.data;
+    if (j?.preguntas && Array.isArray(j.preguntas)) return j.preguntas;
+    // Si el index devuelve HTML u otro formato, no podremos resolver
+    return [];
+  };
+
+  const resolveByIndex = async (needle) => {
+    const list = await getListadoPreguntas();
+    if (!list.length) return null;
+
+    // 1) Match estricto por campos
+    const candidates = list.filter((p) =>
+      norm(p.texto_pregunta) === norm(needle.texto_pregunta) &&
+      String(p.id_tema ?? "") === String(needle.id_tema ?? "") &&
+      String(p.id_nivel_bloom ?? "") === String(needle.id_nivel_bloom ?? "") &&
+      String(p.id_dificultad ?? "") === String(needle.id_dificultad ?? "") &&
+      String(p.id_tipo_pregunta ?? "") === String(needle.id_tipo_pregunta ?? "")
+    );
+
+    if (candidates.length) {
+      candidates.sort((a, b) => Number(b.id) - Number(a.id));
+      return Number(candidates[0].id);
+    }
+
+    // 2) Match laxo por texto solamente
+    const byText = list.filter((p) => norm(p.texto_pregunta) === norm(needle.texto_pregunta));
+    if (byText.length) {
+      byText.sort((a, b) => Number(b.id) - Number(a.id));
+      return Number(byText[0].id);
+    }
+
+    // 3) Último ID como último recurso
+    const maxId = list.reduce((acc, p) => Math.max(acc, Number(p.id) || 0), 0);
+    return maxId || null;
+  };
+
+  try {
+    // 1) Crear la PREGUNTA
+    const bodyPregunta = {
+      texto_pregunta: pregunta,
+      explicacion,
+      id_tema: tema ? Number(tema) : null,
+      id_nivel_bloom: bloomNivel ? Number(bloomNivel) : null,
+      id_dificultad: dificultad ? Number(dificultad) : null,
+      id_tipo_pregunta: Number(tipo),
+      estado: 1,
+    };
+
+    const preguntaRes = await fetch(`${API}/preguntas`, {
+      method: "POST",
+      headers: headersAuth,
+      body: JSON.stringify(bodyPregunta),
+    });
+
+    const preguntaData = await safeJson(preguntaRes);
+    let pid = extractId(preguntaRes, preguntaData);
+
+    if (!preguntaRes.ok) {
+      const errTxt = preguntaData?.message || (await preguntaRes.text());
+      throw new Error(errTxt || "Error al crear la pregunta");
+    }
+
+    if (!pid) {
+      console.warn("La pregunta se creó pero la API no devolvió ID; resolviendo por /preguntas …", preguntaData);
+      pid = await resolveByIndex(bodyPregunta);
+      if (!pid) throw new Error("No se obtuvo el ID de la pregunta");
+    }
+
+    // 2) Crear OPCIONES si aplica
+    const tipoNombre = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
+    const isOM = /opcion|múltiple|multiple/.test(tipoNombre);
+    const isVF = /verdadero|falso/.test(tipoNombre);
+
+    if (isOM || isVF) {
+      let opcionesPayload = Object.entries(opciones)
+        .filter(([_, texto]) => (texto || "").trim() !== "")
+        .map(([clave, texto]) => ({
+          id_pregunta: pid,
+          texto_opcion: texto,
+          es_correcta: correcta === clave ? 1 : 0,
+        }));
+
+      // Asegurar V/F aunque el usuario haya borrado uno
+      if (isVF) {
+        const ensure = (label, k) => {
+          if (!opcionesPayload.find((o) => norm(o.texto_opcion) === norm(label))) {
+            opcionesPayload.push({
+              id_pregunta: pid,
+              texto_opcion: label,
+              es_correcta: correcta === k ? 1 : 0,
+            });
+          }
+        };
+        ensure("Verdadero", "A");
+        ensure("Falso", "B");
+      }
+
+      for (const opcion of opcionesPayload) {
+        const res = await fetch(`${API}/opcion-respuestas`, {
+          method: "POST",
+          headers: headersAuth,
+          body: JSON.stringify(opcion),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`Error al guardar una opción: ${t || res.status}`);
+        }
+      }
+    }
+
+    setMsg({ ok: true, text: "✅ Pregunta creada correctamente" });
+    setTimeout(() => navigate("/docente/banco-preguntas"), 700);
+  } catch (err) {
+    setMsg({ ok: false, text: err.message || "Error inesperado" });
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   // ===== UI =====
   return (
