@@ -1,5 +1,5 @@
 // src/pages/docente/CrearPregunta.jsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { QuestionEditor } from "../../components/QuestionEditor";
 import MarkdownPreview from "@uiw/react-markdown-preview";
@@ -12,15 +12,129 @@ import "katex/dist/katex.min.css";
 
 const API = "http://localhost:8000/api";
 
-// Utilidad: normalizar string
+// Normalizar string
 const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
 
-// (Opcional) decodificar HTML entidades simples si tu API devuelve &quot; etc.
+// Decodificar HTML si viene escapado
 function decodeHtml(str) {
   if (typeof document === "undefined") return str ?? "";
   const txt = document.createElement("textarea");
   txt.innerHTML = str ?? "";
   return txt.value;
+}
+
+// ===== Sincronizar opciones en edición =====
+async function syncOpciones({
+  API, pid, opcionesMap, correctaClave, isVF, authJSON, authHeaders,
+}) {
+  // 1) Deseadas (desde UI)
+  let deseadas = Object.entries(opcionesMap)
+    .filter(([_, texto]) => (texto || "").trim() !== "")
+    .map(([clave, texto]) => ({
+      clave, // A|B|C|D solo referencia local
+      texto_opcion: texto,
+      es_correcta: correctaClave === clave ? 1 : 0,
+    }));
+
+  // Asegurar Verdadero/Falso
+  if (isVF) {
+    const ensure = (label, k) => {
+      if (!deseadas.find((o) => norm(o.texto_opcion) === norm(label))) {
+        deseadas.push({ clave: k, texto_opcion: label, es_correcta: correctaClave === k ? 1 : 0 });
+      }
+    };
+    ensure("Verdadero", "A");
+    ensure("Falso", "B");
+  }
+
+  // 2) Existentes en backend
+  let existentes = [];
+  try {
+    const ro = await fetch(`${API}/opcion-respuestas?pregunta=${pid}`, { headers: authHeaders });
+    if (ro.ok) {
+      const jo = await ro.clone().json().catch(() => null);
+      existentes = Array.isArray(jo) ? jo : (jo?.data ?? jo?.opciones ?? []);
+    }
+  } catch {}
+
+  // Mapa por texto normalizado
+  const mapExistByText = new Map(
+    existentes
+      .filter((e) => e && (e.texto_opcion || e.texto))
+      .map((e) => [norm(e.texto_opcion ?? e.texto), e])
+  );
+
+  // 3) Crear/actualizar
+  for (const des of deseadas) {
+    const key = norm(des.texto_opcion);
+    const found = mapExistByText.get(key);
+
+    if (!found) {
+      // Crear
+      const res = await fetch(`${API}/opcion-respuestas`, {
+        method: "POST",
+        headers: authJSON,
+        body: JSON.stringify({
+          id_pregunta: pid,
+          texto_opcion: des.texto_opcion,
+          es_correcta: des.es_correcta,
+        }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`Error al crear opción "${des.texto_opcion}": ${t || res.status}`);
+      }
+    } else {
+      // Actualizar si cambió correcta o texto
+      const needsUpdate =
+        Number(found.es_correcta) !== Number(des.es_correcta) ||
+        norm(found.texto_opcion ?? found.texto) !== norm(des.texto_opcion);
+
+      if (needsUpdate) {
+        let ok = false;
+        for (const method of ["PUT", "PATCH"]) {
+          const up = await fetch(`${API}/opcion-respuestas/${found.id}`, {
+            method,
+            headers: authJSON,
+            body: JSON.stringify({
+              id_pregunta: pid,
+              texto_opcion: des.texto_opcion,
+              es_correcta: des.es_correcta,
+            }),
+          });
+          if (up.ok) { ok = true; break; }
+        }
+        if (!ok) {
+          // Fallback: delete + create
+          await fetch(`${API}/opcion-respuestas/${found.id}`, { method: "DELETE", headers: authHeaders }).catch(() => {});
+          const cr = await fetch(`${API}/opcion-respuestas`, {
+            method: "POST",
+            headers: authJSON,
+            body: JSON.stringify({
+              id_pregunta: pid,
+              texto_opcion: des.texto_opcion,
+              es_correcta: des.es_correcta,
+            }),
+          });
+          if (!cr.ok) {
+            const t = await cr.text();
+            throw new Error(`Error al recrear opción "${des.texto_opcion}": ${t || cr.status}`);
+          }
+        }
+      }
+
+      // Marcamos para saber cuáles sobran
+      mapExistByText.delete(key);
+    }
+  }
+
+  // 4) Borrar las que ya no están
+  for (const [, sob] of mapExistByText) {
+    await fetch(`${API}/opcion-respuestas/${sob.id}`, {
+      method: "DELETE",
+      headers: authHeaders,
+    }).catch(() => {});
+  }
 }
 
 export default function CrearPregunta() {
@@ -34,33 +148,37 @@ export default function CrearPregunta() {
   const [explicacion, setExplicacion] = useState("");
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  // Clave para forzar re-montaje del editor cuando llega el valor asíncrono
-  const [editorKey, setEditorKey] = useState(0);
+  const [loading, setLoading] = useState(true); // esperar catálogos
+  const [editorKey, setEditorKey] = useState(0); // re-montar editor
 
   // ===== Catálogos =====
-  const [blooms, setBlooms] = useState([]);       // [{id, nombre}]
-  const [difs, setDifs] = useState([]);           // [{id, nivel}]
-  const [temasList, setTemasList] = useState([]); // [{id, nombre}]
-  const [tipos, setTipos] = useState([]);         // [{id, tipo}]
+  const [blooms, setBlooms] = useState([]);
+  const [difs, setDifs] = useState([]);
+  const [temasList, setTemasList] = useState([]);
+  const [tipos, setTipos] = useState([]);
 
   // ===== Selecciones =====
-  const [tema, setTema] = useState("");             // id_tema
-  const [bloomNivel, setBloomNivel] = useState(""); // id_nivel_bloom
-  const [dificultad, setDificultad] = useState(""); // id_dificultad
-  const [tipo, setTipo] = useState("");             // id_tipo_pregunta
+  const [tema, setTema] = useState("");
+  const [bloomNivel, setBloomNivel] = useState("");
+  const [dificultad, setDificultad] = useState("");
+  const [tipo, setTipo] = useState("");
 
-  // ===== Opciones e inciso correcto =====
+  // ===== Opciones =====
   const [opciones, setOpciones] = useState({ A: "", B: "", C: "", D: "" });
   const [correcta, setCorrecta] = useState("A");
 
   // ===== Preview scale =====
   const [previewScale, setPreviewScale] = useState(1);
 
-  // =================== Helpers ===================
+  // ===== Auth headers (memo) =====
   const token = localStorage.getItem("token");
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeaders = useMemo(
+    () => (token ? { Authorization: `Bearer ${token}` } : {}),
+    [token]
+  );
+
+  // Evitar sobreescritura del formulario tras la primera hidratación
+  const hydratedRef = useRef(false);
 
   const parseOrEmpty = (txt) => {
     try {
@@ -82,7 +200,7 @@ export default function CrearPregunta() {
     try { return await res.clone().json(); } catch { return null; }
   };
 
-  // =================== Cargar catálogos ===================
+  // ===== Cargar catálogos =====
   useEffect(() => {
     const fetchCatalogos = async () => {
       try {
@@ -104,40 +222,34 @@ export default function CrearPregunta() {
         setLoading(false);
       }
     };
-
     fetchCatalogos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // <- no dependemos de authHeaders para no re-ejecutar
 
-  // =================== Cargar pregunta (modo edición) ===================
+  // ===== Cargar pregunta (modo edición) =====
   useEffect(() => {
     const loadEdit = async () => {
       if (!isEdit) return;
-      if (loading) return; // esperamos catálogos para poder preseleccionar
+      if (loading) return;
+      if (hydratedRef.current) return; // ya hidratado
 
       try {
-        // 1) GET pregunta
         const rp = await fetch(`${API}/preguntas/${editId}`, { headers: authHeaders });
         if (!rp.ok) {
           const t = await rp.text();
           throw new Error(t || `No se pudo obtener la pregunta #${editId}`);
         }
         const jp = await rp.json();
-        // console.log("Pregunta API:", jp);
 
-        // Fallbacks de nombre de campo para el enunciado
         let texto =
           jp?.texto_pregunta ??
           jp?.texto ??
           jp?.enunciado ??
           jp?.contenido ??
           "";
-
-        // Si viene HTML-escapado, lo normalizamos (opcional)
         texto = decodeHtml(String(texto));
 
         const exp = jp?.explicacion ?? jp?.explicación ?? "";
-
         const idTema = jp?.id_tema ?? jp?.tema?.id ?? "";
         const idBloom = jp?.id_nivel_bloom ?? jp?.nivel_bloom?.id ?? "";
         const idDif = jp?.id_dificultad ?? jp?.dificultad?.id ?? "";
@@ -150,10 +262,10 @@ export default function CrearPregunta() {
         setDificultad(idDif ? String(idDif) : "");
         setTipo(idTipo ? String(idTipo) : "");
 
-        // 🚀 Forzar que el editor se “reinicialice” con el nuevo valor
+        // re-montar editor para que muestre el valor
         setEditorKey((k) => k + 1);
 
-        // 2) (Opcional) cargar opciones si tu API las expone
+        // cargar opciones
         try {
           let ro = await fetch(`${API}/opcion-respuestas?pregunta=${editId}`, { headers: authHeaders });
           if (!ro.ok) {
@@ -180,38 +292,37 @@ export default function CrearPregunta() {
       } catch (err) {
         console.error(err);
         setMsg({ ok: false, text: err.message || "No se pudo cargar la pregunta para editar" });
+      } finally {
+        // Marcamos como hidratado para no volver a pisar selects/inputs
+        hydratedRef.current = true;
       }
     };
 
     loadEdit();
-  }, [isEdit, editId, authHeaders, loading]);
+  // OJO: no pongas authHeaders en deps para no re-ejecutar y pisar cambios
+  }, [isEdit, editId, loading]); 
 
-  // ===== Helpers para el tipo seleccionado =====
+  // ===== Helpers de tipo =====
   const selectedTipo = useMemo(
     () => tipos.find((x) => String(x.id) === String(tipo)),
     [tipos, tipo]
   );
-
   const tipoNombre = (selectedTipo?.tipo || "").toLowerCase();
-  const isOpcionMultiple = selectedTipo
-    ? /opcion|múltiple|multiple/.test(tipoNombre)
-    : tipo === "1";
-  const isVerdaderoFalso = selectedTipo
-    ? /verdadero|falso/.test(tipoNombre)
-    : tipo === "2";
-  const isAbierta = selectedTipo
-    ? /abierta|abierto|texto/.test(tipoNombre)
-    : tipo === "3";
+  const isOpcionMultiple = selectedTipo ? /opcion|múltiple|multiple/.test(tipoNombre) : tipo === "1";
+  const isVerdaderoFalso = selectedTipo ? /verdadero|falso/.test(tipoNombre) : tipo === "2";
+  const isAbierta = selectedTipo ? /abierta|abierto|texto/.test(tipoNombre) : tipo === "3";
 
   // Ajustar opciones por defecto al cambiar tipo
   useEffect(() => {
     if (isVerdaderoFalso) {
+      // Para VF mantenemos fijos los textos
       setOpciones(() => {
         const next = { A: "Verdadero", B: "Falso", C: "", D: "" };
         setCorrecta((c) => (c === "A" || c === "B" ? c : "A"));
         return next;
       });
     } else if (isAbierta) {
+      // Para abierta limpiamos incisos
       setOpciones({ A: "", B: "", C: "", D: "" });
       setCorrecta("A");
     }
@@ -222,7 +333,7 @@ export default function CrearPregunta() {
     setOpciones((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Chips bonitos en preview
+  // Chips
   const prettyTipo =
     selectedTipo?.tipo ||
     (isOpcionMultiple ? "Opción múltiple" : isVerdaderoFalso ? "Verdadero/Falso" : isAbierta ? "Abierta" : "—");
@@ -230,7 +341,7 @@ export default function CrearPregunta() {
   const prettyDificultad = difs.find((d) => String(d.id) === String(dificultad))?.nivel || "—";
   const prettyTema = temasList.find((t) => String(t.id) === String(tema))?.nombre || "";
 
-  // =================== Guardar / Actualizar ===================
+  // ===== Guardar / Actualizar =====
   const guardar = async (e) => {
     e.preventDefault();
     setMsg(null);
@@ -252,9 +363,10 @@ export default function CrearPregunta() {
         id_nivel_bloom: bloomNivel ? Number(bloomNivel) : null,
         id_dificultad: dificultad ? Number(dificultad) : null,
         id_tipo_pregunta: Number(tipo),
-        estado: 1, // al crear/actualizar dejamos activa
+        estado: 1,
       };
 
+      // ===== MODO EDICIÓN =====
       if (isEdit) {
         const putRes = await fetch(`${API}/preguntas/${editId}`, {
           method: "PUT",
@@ -266,12 +378,30 @@ export default function CrearPregunta() {
           throw new Error(putJson?.message || (await putRes.text()) || "No se pudo actualizar la pregunta");
         }
 
+        // Sincronizar incisos si aplica
+        const tNameSel = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
+        const isOM = /opcion|múltiple|multiple/.test(tNameSel);
+        const isVF = /verdadero|falso/.test(tNameSel);
+
+        if (isOM || isVF) {
+          await syncOpciones({
+            API,
+            pid: Number(editId),
+            opcionesMap: opciones,
+            correctaClave: correcta,
+            isVF,
+            authJSON: headersAuthJson,
+            authHeaders,
+          });
+        }
+
+        // Quedarse en pantalla
         setMsg({ ok: true, text: "✅ Pregunta actualizada correctamente" });
-        setTimeout(() => navigate("/docente/banco-preguntas"), 700);
         setSaving(false);
         return;
       }
 
+      // ===== MODO CREACIÓN =====
       const preguntaRes = await fetch(`${API}/preguntas`, {
         method: "POST",
         headers: headersAuthJson,
@@ -296,10 +426,10 @@ export default function CrearPregunta() {
 
       // Crear opciones si aplica
       const tName = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
-      const isOM = /opcion|múltiple|multiple/.test(tName);
-      const isVF = /verdadero|falso/.test(tName);
+      const isOMCreate = /opcion|múltiple|multiple/.test(tName);
+      const isVFCreate = /verdadero|falso/.test(tName);
 
-      if (isOM || isVF) {
+      if (isOMCreate || isVFCreate) {
         let opcionesPayload = Object.entries(opciones)
           .filter(([_, texto]) => (texto || "").trim() !== "")
           .map(([clave, texto]) => ({
@@ -308,7 +438,7 @@ export default function CrearPregunta() {
             es_correcta: correcta === clave ? 1 : 0,
           }));
 
-        if (isVF) {
+        if (isVFCreate) {
           const ensure = (label, k) => {
             if (!opcionesPayload.find((o) => norm(o.texto_opcion) === norm(label))) {
               opcionesPayload.push({
@@ -353,18 +483,16 @@ export default function CrearPregunta() {
       </h1>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* ===== FORMULARIO (span 7/12 en xl) ===== */}
+        {/* ===== FORMULARIO ===== */}
         <form
           onSubmit={guardar}
           className="xl:col-span-7 bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6"
         >
-          {/* Header de sección */}
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-800">Datos generales</h2>
             <span className="text-xs text-gray-500">Campos obligatorios marcados con *</span>
           </div>
 
-          {/* Selecciones principales */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Tema*</label>
@@ -429,9 +557,7 @@ export default function CrearPregunta() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">Contenido (enunciado)*</label>
- main
             </div>
-            {/* 👇 clave para forzar re-montaje cuando cargamos en edición */}
             <QuestionEditor key={editorKey} value={pregunta} onChange={setPregunta} />
             <p className="text-xs text-gray-500">
               Tip: inline <code>$a^2+b^2=c^2$</code> o bloque <code>{`$$\\int_0^1 x^2 dx$$`}</code>.
@@ -526,6 +652,7 @@ export default function CrearPregunta() {
             >
               Cancelar
             </button>
+
             <button
               type="submit"
               disabled={saving}
@@ -542,7 +669,7 @@ export default function CrearPregunta() {
           )}
         </form>
 
-        {/* ===== PREVIEW (span 5/12 en xl) ===== */}
+        {/* ===== PREVIEW ===== */}
         <aside className="xl:col-span-5">
           <div className="sticky top-6">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -599,7 +726,6 @@ export default function CrearPregunta() {
                     ]}
                   />
 
-                  {/* Vista previa de incisos */}
                   {isOpcionMultiple && (
                     <ul className="mt-4 space-y-2">
                       {["A", "B", "C", "D"].map(
@@ -633,7 +759,6 @@ export default function CrearPregunta() {
                     </ul>
                   )}
 
-                  {/* Explicación */}
                   {explicacion && (
                     <div className="mt-6 p-4 rounded-xl border bg-white">
                       <h4 className="m-0">Explicación</h4>
