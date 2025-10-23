@@ -1,6 +1,6 @@
 // src/pages/docente/CrearPregunta.jsx
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { QuestionEditor } from "../../components/QuestionEditor";
 import MarkdownPreview from "@uiw/react-markdown-preview";
 import remarkMath from "remark-math";
@@ -10,18 +10,37 @@ import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import "katex/dist/katex.min.css";
 
+const API = "http://localhost:8000/api";
+
+// Utilidad: normalizar string
+const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+// (Opcional) decodificar HTML entidades simples si tu API devuelve &quot; etc.
+function decodeHtml(str) {
+  if (typeof document === "undefined") return str ?? "";
+  const txt = document.createElement("textarea");
+  txt.innerHTML = str ?? "";
+  return txt.value;
+}
+
 export default function CrearPregunta() {
   const navigate = useNavigate();
+  const [search] = useSearchParams();
+  const editId = search.get("edit");
+  const isEdit = !!editId;
 
   // ===== Estado base =====
   const [pregunta, setPregunta] = useState("");
   const [explicacion, setExplicacion] = useState("");
-  const [puntos, setPuntos] = useState(1);
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // ===== Catálogos (IDs reales del backend) =====
-  const [blooms, setBlooms] = useState([]);       // [{id, nombre, ...}]
+  // Clave para forzar re-montaje del editor cuando llega el valor asíncrono
+  const [editorKey, setEditorKey] = useState(0);
+
+  // ===== Catálogos =====
+  const [blooms, setBlooms] = useState([]);       // [{id, nombre}]
   const [difs, setDifs] = useState([]);           // [{id, nivel}]
   const [temasList, setTemasList] = useState([]); // [{id, nombre}]
   const [tipos, setTipos] = useState([]);         // [{id, tipo}]
@@ -39,55 +58,133 @@ export default function CrearPregunta() {
   // ===== Preview scale =====
   const [previewScale, setPreviewScale] = useState(1);
 
-  // ===== Cargar catálogos =====
+  // =================== Helpers ===================
+  const token = localStorage.getItem("token");
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const parseOrEmpty = (txt) => {
+    try {
+      const json = JSON.parse(txt);
+      if (Array.isArray(json)) return json;
+      if (json.data && Array.isArray(json.data)) return json.data;
+      if (json.niveles) return json.niveles;
+      if (json.temas) return json.temas;
+      if (json.dificultades) return json.dificultades;
+      if (json.tipos) return json.tipos;
+      if (json.pregunta) return [json.pregunta];
+      return [];
+    } catch {
+      return [];
+    }
+  };
+
+  const safeJson = async (res) => {
+    try { return await res.clone().json(); } catch { return null; }
+  };
+
+  // =================== Cargar catálogos ===================
   useEffect(() => {
     const fetchCatalogos = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-        const urls = {
-          blooms: `http://localhost:8000/api/nivel-blooms`,
-          difs: `http://localhost:8000/api/dificultades`,
-          temas: `http://localhost:8000/api/temas`,
-          tipos: `http://localhost:8000/api/tipo-preguntas`,
-          
-        };
-
-        const [r1, r2, r3, r4] = await Promise.all([
-          fetch(urls.blooms, { headers }),
-          fetch(urls.difs, { headers }),
-          fetch(urls.temas, { headers }),
-          fetch(urls.tipos, { headers }),
+        const [rB, rD, rT, rTp] = await Promise.all([
+          fetch(`${API}/nivel-blooms`, { headers: authHeaders }),
+          fetch(`${API}/dificultades`, { headers: authHeaders }),
+          fetch(`${API}/temas`, { headers: authHeaders }),
+          fetch(`${API}/tipo-preguntas`, { headers: authHeaders }),
         ]);
 
-        const textos = await Promise.all([r1.text(), r2.text(), r3.text(), r4.text()]);
-        const parseOrEmpty = (txt) => {
-          try {
-            const json = JSON.parse(txt);
-            if (Array.isArray(json)) return json;
-            if (json.data) return json.data;
-            if (json.niveles) return json.niveles;
-            if (json.temas) return json.temas;
-            if (json.dificultades) return json.dificultades;
-            if (json.tipos) return json.tipos;
-            return [];
-          } catch {
-            return [];
-          }
-        };
-
+        const textos = await Promise.all([rB.text(), rD.text(), rT.text(), rTp.text()]);
         setBlooms(parseOrEmpty(textos[0]));
         setDifs(parseOrEmpty(textos[1]));
         setTemasList(parseOrEmpty(textos[2]));
         setTipos(parseOrEmpty(textos[3]));
       } catch (err) {
-        console.error(" Error cargando catálogos:", err);
+        console.error("Error cargando catálogos:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchCatalogos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // =================== Cargar pregunta (modo edición) ===================
+  useEffect(() => {
+    const loadEdit = async () => {
+      if (!isEdit) return;
+      if (loading) return; // esperamos catálogos para poder preseleccionar
+
+      try {
+        // 1) GET pregunta
+        const rp = await fetch(`${API}/preguntas/${editId}`, { headers: authHeaders });
+        if (!rp.ok) {
+          const t = await rp.text();
+          throw new Error(t || `No se pudo obtener la pregunta #${editId}`);
+        }
+        const jp = await rp.json();
+        // console.log("Pregunta API:", jp);
+
+        // Fallbacks de nombre de campo para el enunciado
+        let texto =
+          jp?.texto_pregunta ??
+          jp?.texto ??
+          jp?.enunciado ??
+          jp?.contenido ??
+          "";
+
+        // Si viene HTML-escapado, lo normalizamos (opcional)
+        texto = decodeHtml(String(texto));
+
+        const exp = jp?.explicacion ?? jp?.explicación ?? "";
+
+        const idTema = jp?.id_tema ?? jp?.tema?.id ?? "";
+        const idBloom = jp?.id_nivel_bloom ?? jp?.nivel_bloom?.id ?? "";
+        const idDif = jp?.id_dificultad ?? jp?.dificultad?.id ?? "";
+        const idTipo = jp?.id_tipo_pregunta ?? jp?.tipo_pregunta?.id ?? "";
+
+        setPregunta(texto);
+        setExplicacion(exp);
+        setTema(idTema ? String(idTema) : "");
+        setBloomNivel(idBloom ? String(idBloom) : "");
+        setDificultad(idDif ? String(idDif) : "");
+        setTipo(idTipo ? String(idTipo) : "");
+
+        // 🚀 Forzar que el editor se “reinicialice” con el nuevo valor
+        setEditorKey((k) => k + 1);
+
+        // 2) (Opcional) cargar opciones si tu API las expone
+        try {
+          let ro = await fetch(`${API}/opcion-respuestas?pregunta=${editId}`, { headers: authHeaders });
+          if (!ro.ok) {
+            ro = await fetch(`${API}/preguntas/${editId}/opciones`, { headers: authHeaders });
+          }
+          if (ro.ok) {
+            const jo = await safeJson(ro);
+            const list = Array.isArray(jo) ? jo : (jo?.data ?? jo?.opciones ?? []);
+            if (Array.isArray(list) && list.length) {
+              const map = { A: "", B: "", C: "", D: "" };
+              const ord = ["A", "B", "C", "D"];
+              list.slice(0, 4).forEach((op, i) => {
+                map[ord[i]] = op?.texto_opcion ?? op?.texto ?? "";
+                if (op?.es_correcta == 1 || op?.es_correcta === true) {
+                  setCorrecta(ord[i]);
+                }
+              });
+              setOpciones(map);
+            }
+          }
+        } catch (e) {
+          console.warn("No se pudieron cargar opciones de la pregunta (no crítico).", e);
+        }
+      } catch (err) {
+        console.error(err);
+        setMsg({ ok: false, text: err.message || "No se pudo cargar la pregunta para editar" });
+      }
+    };
+
+    loadEdit();
+  }, [isEdit, editId, authHeaders, loading]);
 
   // ===== Helpers para el tipo seleccionado =====
   const selectedTipo = useMemo(
@@ -109,8 +206,11 @@ export default function CrearPregunta() {
   // Ajustar opciones por defecto al cambiar tipo
   useEffect(() => {
     if (isVerdaderoFalso) {
-      setOpciones({ A: "Verdadero", B: "Falso", C: "", D: "" });
-      setCorrecta((c) => (c === "A" || c === "B" ? c : "A"));
+      setOpciones(() => {
+        const next = { A: "Verdadero", B: "Falso", C: "", D: "" };
+        setCorrecta((c) => (c === "A" || c === "B" ? c : "A"));
+        return next;
+      });
     } else if (isAbierta) {
       setOpciones({ A: "", B: "", C: "", D: "" });
       setCorrecta("A");
@@ -130,181 +230,127 @@ export default function CrearPregunta() {
   const prettyDificultad = difs.find((d) => String(d.id) === String(dificultad))?.nivel || "—";
   const prettyTema = temasList.find((t) => String(t.id) === String(tema))?.nombre || "";
 
-  // ===== Guardar (con extracción de ID robusta) =====
-const guardar = async (e) => {
-  e.preventDefault();
-  setMsg(null);
-  setSaving(true);
+  // =================== Guardar / Actualizar ===================
+  const guardar = async (e) => {
+    e.preventDefault();
+    setMsg(null);
+    setSaving(true);
 
-  const API = "http://localhost:8000/api";
-  const token = localStorage.getItem("token");
+    try {
+      if (!pregunta.trim()) throw new Error("El enunciado no puede estar vacío.");
+      if (!tipo) throw new Error("Selecciona el tipo de pregunta.");
 
-  if (!pregunta.trim()) {
-    setMsg({ ok: false, text: "El enunciado no puede estar vacío." });
-    setSaving(false);
-    return;
-  }
-  if (!tipo) {
-    setMsg({ ok: false, text: "Selecciona el tipo de pregunta." });
-    setSaving(false);
-    return;
-  }
+      const headersAuthJson = {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      };
 
-  const headersAuth = {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+      const bodyPregunta = {
+        texto_pregunta: pregunta,
+        explicacion,
+        id_tema: tema ? Number(tema) : null,
+        id_nivel_bloom: bloomNivel ? Number(bloomNivel) : null,
+        id_dificultad: dificultad ? Number(dificultad) : null,
+        id_tipo_pregunta: Number(tipo),
+        estado: 1, // al crear/actualizar dejamos activa
+      };
 
-  // Helpers
-  const safeJson = async (res) => {
-    try { return await res.clone().json(); } catch { return null; }
-  };
-  const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
+      if (isEdit) {
+        const putRes = await fetch(`${API}/preguntas/${editId}`, {
+          method: "PUT",
+          headers: headersAuthJson,
+          body: JSON.stringify(bodyPregunta),
+        });
+        const putJson = await safeJson(putRes);
+        if (!putRes.ok) {
+          throw new Error(putJson?.message || (await putRes.text()) || "No se pudo actualizar la pregunta");
+        }
 
-  const extractId = (res, data) => {
-    if (data) {
-      if (data.id) return Number(data.id);
-      if (data.data?.id) return Number(data.data.id);
-      if (data.pregunta?.id) return Number(data.pregunta.id);
-    }
-    const loc = res.headers?.get?.("Location") || res.headers?.get?.("location");
-    if (loc) {
-      const m = loc.match(/\/preguntas\/(\d+)/) || loc.match(/\/(\d+)\s*$/);
-      if (m) return Number(m[1]);
-    }
-    return null;
-  };
-
-  const getListadoPreguntas = async () => {
-    const listRes = await fetch(`${API}/preguntas`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    const j = await safeJson(listRes);
-    if (Array.isArray(j)) return j;
-    if (j?.data && Array.isArray(j.data)) return j.data;
-    if (j?.preguntas && Array.isArray(j.preguntas)) return j.preguntas;
-    // Si el index devuelve HTML u otro formato, no podremos resolver
-    return [];
-  };
-
-  const resolveByIndex = async (needle) => {
-    const list = await getListadoPreguntas();
-    if (!list.length) return null;
-
-    // 1) Match estricto por campos
-    const candidates = list.filter((p) =>
-      norm(p.texto_pregunta) === norm(needle.texto_pregunta) &&
-      String(p.id_tema ?? "") === String(needle.id_tema ?? "") &&
-      String(p.id_nivel_bloom ?? "") === String(needle.id_nivel_bloom ?? "") &&
-      String(p.id_dificultad ?? "") === String(needle.id_dificultad ?? "") &&
-      String(p.id_tipo_pregunta ?? "") === String(needle.id_tipo_pregunta ?? "")
-    );
-
-    if (candidates.length) {
-      candidates.sort((a, b) => Number(b.id) - Number(a.id));
-      return Number(candidates[0].id);
-    }
-
-    // 2) Match laxo por texto solamente
-    const byText = list.filter((p) => norm(p.texto_pregunta) === norm(needle.texto_pregunta));
-    if (byText.length) {
-      byText.sort((a, b) => Number(b.id) - Number(a.id));
-      return Number(byText[0].id);
-    }
-
-    // 3) Último ID como último recurso
-    const maxId = list.reduce((acc, p) => Math.max(acc, Number(p.id) || 0), 0);
-    return maxId || null;
-  };
-
-  try {
-    // 1) Crear la PREGUNTA
-    const bodyPregunta = {
-      texto_pregunta: pregunta,
-      explicacion,
-      id_tema: tema ? Number(tema) : null,
-      id_nivel_bloom: bloomNivel ? Number(bloomNivel) : null,
-      id_dificultad: dificultad ? Number(dificultad) : null,
-      id_tipo_pregunta: Number(tipo),
-      estado: 1,
-    };
-
-    const preguntaRes = await fetch(`${API}/preguntas`, {
-      method: "POST",
-      headers: headersAuth,
-      body: JSON.stringify(bodyPregunta),
-    });
-
-    const preguntaData = await safeJson(preguntaRes);
-    let pid = extractId(preguntaRes, preguntaData);
-
-    if (!preguntaRes.ok) {
-      const errTxt = preguntaData?.message || (await preguntaRes.text());
-      throw new Error(errTxt || "Error al crear la pregunta");
-    }
-
-    if (!pid) {
-      console.warn("La pregunta se creó pero la API no devolvió ID; resolviendo por /preguntas …", preguntaData);
-      pid = await resolveByIndex(bodyPregunta);
-      if (!pid) throw new Error("No se obtuvo el ID de la pregunta");
-    }
-
-    // 2) Crear OPCIONES si aplica
-    const tipoNombre = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
-    const isOM = /opcion|múltiple|multiple/.test(tipoNombre);
-    const isVF = /verdadero|falso/.test(tipoNombre);
-
-    if (isOM || isVF) {
-      let opcionesPayload = Object.entries(opciones)
-        .filter(([_, texto]) => (texto || "").trim() !== "")
-        .map(([clave, texto]) => ({
-          id_pregunta: pid,
-          texto_opcion: texto,
-          es_correcta: correcta === clave ? 1 : 0,
-        }));
-
-      // Asegurar V/F aunque el usuario haya borrado uno
-      if (isVF) {
-        const ensure = (label, k) => {
-          if (!opcionesPayload.find((o) => norm(o.texto_opcion) === norm(label))) {
-            opcionesPayload.push({
-              id_pregunta: pid,
-              texto_opcion: label,
-              es_correcta: correcta === k ? 1 : 0,
-            });
-          }
-        };
-        ensure("Verdadero", "A");
-        ensure("Falso", "B");
+        setMsg({ ok: true, text: "✅ Pregunta actualizada correctamente" });
+        setTimeout(() => navigate("/docente/banco-preguntas"), 700);
+        setSaving(false);
+        return;
       }
 
-      for (const opcion of opcionesPayload) {
-        const res = await fetch(`${API}/opcion-respuestas`, {
-          method: "POST",
-          headers: headersAuth,
-          body: JSON.stringify(opcion),
-        });
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`Error al guardar una opción: ${t || res.status}`);
+      const preguntaRes = await fetch(`${API}/preguntas`, {
+        method: "POST",
+        headers: headersAuthJson,
+        body: JSON.stringify(bodyPregunta),
+      });
+
+      const preguntaData = await safeJson(preguntaRes);
+      if (!preguntaRes.ok) {
+        const errTxt = preguntaData?.message || (await preguntaRes.text());
+        throw new Error(errTxt || "Error al crear la pregunta");
+      }
+
+      let pid = preguntaData?.id || preguntaData?.data?.id || preguntaData?.pregunta?.id || null;
+      if (!pid) {
+        const loc = preguntaRes.headers.get("Location") || preguntaRes.headers.get("location");
+        if (loc) {
+          const m = loc.match(/\/preguntas\/(\d+)/) || loc.match(/\/(\d+)\s*$/);
+          if (m) pid = Number(m[1]);
         }
       }
+      if (!pid) throw new Error("No se obtuvo el ID de la pregunta creada");
+
+      // Crear opciones si aplica
+      const tName = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
+      const isOM = /opcion|múltiple|multiple/.test(tName);
+      const isVF = /verdadero|falso/.test(tName);
+
+      if (isOM || isVF) {
+        let opcionesPayload = Object.entries(opciones)
+          .filter(([_, texto]) => (texto || "").trim() !== "")
+          .map(([clave, texto]) => ({
+            id_pregunta: pid,
+            texto_opcion: texto,
+            es_correcta: correcta === clave ? 1 : 0,
+          }));
+
+        if (isVF) {
+          const ensure = (label, k) => {
+            if (!opcionesPayload.find((o) => norm(o.texto_opcion) === norm(label))) {
+              opcionesPayload.push({
+                id_pregunta: pid,
+                texto_opcion: label,
+                es_correcta: correcta === k ? 1 : 0,
+              });
+            }
+          };
+          ensure("Verdadero", "A");
+          ensure("Falso", "B");
+        }
+
+        for (const opcion of opcionesPayload) {
+          const res = await fetch(`${API}/opcion-respuestas`, {
+            method: "POST",
+            headers: headersAuthJson,
+            body: JSON.stringify(opcion),
+          });
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error(`Error al guardar una opción: ${t || res.status}`);
+          }
+        }
+      }
+
+      setMsg({ ok: true, text: "✅ Pregunta creada correctamente" });
+      setTimeout(() => navigate("/docente/banco-preguntas"), 700);
+    } catch (err) {
+      console.error(err);
+      setMsg({ ok: false, text: err.message || "Error inesperado" });
+    } finally {
+      setSaving(false);
     }
-
-    setMsg({ ok: true, text: "✅ Pregunta creada correctamente" });
-    setTimeout(() => navigate("/docente/banco-preguntas"), 700);
-  } catch (err) {
-    setMsg({ ok: false, text: err.message || "Error inesperado" });
-  } finally {
-    setSaving(false);
-  }
-};
-
+  };
 
   // ===== UI =====
   return (
     <div className="max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">Crear Pregunta</h1>
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">
+        {isEdit ? "Editar Pregunta" : "Crear Pregunta"}
+      </h1>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* ===== FORMULARIO (span 7/12 en xl) ===== */}
@@ -377,29 +423,16 @@ const guardar = async (e) => {
             </div>
           </div>
 
-          {/* Puntos */}
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Puntos*</label>
-              <input
-                type="number"
-                min={1}
-                value={puntos}
-                onChange={(e) => setPuntos(Number(e.target.value))}
-                className="w-full h-10 border border-gray-300 rounded-xl px-3 focus:ring-2 focus:ring-purple-600"
-              />
-            </div>
-          </div>
-
           <hr className="border-gray-200" />
 
           {/* Editor */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">Contenido (enunciado)*</label>
-              
+ main
             </div>
-            <QuestionEditor value={pregunta} onChange={setPregunta} />
+            {/* 👇 clave para forzar re-montaje cuando cargamos en edición */}
+            <QuestionEditor key={editorKey} value={pregunta} onChange={setPregunta} />
             <p className="text-xs text-gray-500">
               Tip: inline <code>$a^2+b^2=c^2$</code> o bloque <code>{`$$\\int_0^1 x^2 dx$$`}</code>.
             </p>
@@ -445,10 +478,7 @@ const guardar = async (e) => {
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-800">Incisos (Verdadero / Falso)</h3>
               <div className="grid sm:grid-cols-2 gap-3">
-                {[
-                  { k: "A", label: "Verdadero" },
-                  { k: "B", label: "Falso" },
-                ].map(({ k, label }) => (
+                {[{ k: "A", label: "Verdadero" }, { k: "B", label: "Falso" }].map(({ k, label }) => (
                   <label
                     key={k}
                     className={`flex items-center gap-2 p-3 border rounded-xl cursor-pointer ${
@@ -501,7 +531,7 @@ const guardar = async (e) => {
               disabled={saving}
               className="h-10 px-6 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
             >
-              {saving ? "Guardando..." : "Guardar Pregunta"}
+              {saving ? (isEdit ? "Actualizando..." : "Guardando...") : (isEdit ? "Actualizar" : "Guardar Pregunta")}
             </button>
           </div>
 
@@ -533,9 +563,6 @@ const guardar = async (e) => {
                   <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
                     Dificultad: {prettyDificultad}
                   </span>
-                  <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                    {puntos} pt{puntos !== 1 ? "s" : ""}
-                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -566,7 +593,9 @@ const guardar = async (e) => {
                     source={pregunta}
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[
-                      [rehypeKatex, { output: "html" }], rehypeSlug, [rehypeAutolinkHeadings, { behavior: "wrap" }],
+                      [rehypeKatex, { output: "html" }],
+                      rehypeSlug,
+                      [rehypeAutolinkHeadings, { behavior: "wrap" }],
                     ]}
                   />
 
@@ -591,10 +620,7 @@ const guardar = async (e) => {
 
                   {isVerdaderoFalso && (
                     <ul className="mt-4 space-y-2">
-                      {[
-                        { k: "A", label: "Verdadero" },
-                        { k: "B", label: "Falso" },
-                      ].map(({ k, label }) => (
+                      {[{ k: "A", label: "Verdadero" }, { k: "B", label: "Falso" }].map(({ k, label }) => (
                         <li
                           key={k}
                           className={`border rounded-xl px-4 py-2 ${
