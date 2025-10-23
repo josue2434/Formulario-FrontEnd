@@ -23,54 +23,95 @@ function decodeHtml(str) {
   return txt.value;
 }
 
-// ===== Sincronizar opciones en edición =====
+// ===== Sincronizar opciones en edición (sin DELETE) =====
 async function syncOpciones({
-  API, pid, opcionesMap, correctaClave, isVF, authJSON, authHeaders,
+  API,
+  pid,
+  opcionesMap,
+  correctaClave,
+  isVF,
+  authJSON,
+  authHeaders, // no se usa, se deja por compatibilidad
+  opIdsState,
+  setOpIdsState,
 }) {
-  // 1) Deseadas (desde UI)
-  let deseadas = Object.entries(opcionesMap)
-    .filter(([_, texto]) => (texto || "").trim() !== "")
-    .map(([clave, texto]) => ({
-      clave, // A|B|C|D solo referencia local
-      texto_opcion: texto,
+  // 1) Construye la lista deseada A..D con IDs actuales
+  let deseadas = ["A", "B", "C", "D"]
+    .map((clave) => ({
+      clave,
+      texto_opcion: (opcionesMap[clave] || "").trim(),
       es_correcta: correctaClave === clave ? 1 : 0,
-    }));
+      id: opIdsState?.[clave] ?? null,
+    }))
+    .filter((o) => o.texto_opcion !== "");
 
-  // Asegurar Verdadero/Falso
+  // 2) Si es Verdadero/Falso, asegura A=Verdadero, B=Falso y limita a A/B
   if (isVF) {
     const ensure = (label, k) => {
-      if (!deseadas.find((o) => norm(o.texto_opcion) === norm(label))) {
-        deseadas.push({ clave: k, texto_opcion: label, es_correcta: correctaClave === k ? 1 : 0 });
+      const idx = deseadas.findIndex((o) => norm(o.texto_opcion) === norm(label));
+      if (idx === -1) {
+        const existing = deseadas.find((o) => o.clave === k);
+        if (existing) {
+          existing.texto_opcion = label;
+          existing.es_correcta = correctaClave === k ? 1 : 0;
+        } else {
+          deseadas.push({
+            clave: k,
+            texto_opcion: label,
+            es_correcta: correctaClave === k ? 1 : 0,
+            id: opIdsState?.[k] ?? null,
+          });
+        }
       }
     };
     ensure("Verdadero", "A");
     ensure("Falso", "B");
+    deseadas = deseadas.filter((o) => o.clave === "A" || o.clave === "B");
   }
 
-  // 2) Existentes en backend
-  let existentes = [];
-  try {
-    const ro = await fetch(`${API}/opcion-respuestas?pregunta=${pid}`, { headers: authHeaders });
-    if (ro.ok) {
-      const jo = await ro.clone().json().catch(() => null);
-      existentes = Array.isArray(jo) ? jo : (jo?.data ?? jo?.opciones ?? []);
-    }
-  } catch {}
+  // 3) Actualiza por ID si existe; si no, crea — NUNCA borrar
+  const nuevosIds = { ...(opIdsState || {}) };
 
-  // Mapa por texto normalizado
-  const mapExistByText = new Map(
-    existentes
-      .filter((e) => e && (e.texto_opcion || e.texto))
-      .map((e) => [norm(e.texto_opcion ?? e.texto), e])
-  );
-
-  // 3) Crear/actualizar
   for (const des of deseadas) {
-    const key = norm(des.texto_opcion);
-    const found = mapExistByText.get(key);
-
-    if (!found) {
-      // Crear
+    if (des.id) {
+      // UPDATE por ID
+      let ok = false;
+      for (const method of ["PUT", "PATCH"]) {
+        const up = await fetch(`${API}/opcion-respuestas/${des.id}`, {
+          method,
+          headers: authJSON,
+          body: JSON.stringify({
+            id_pregunta: pid,
+            texto_opcion: des.texto_opcion,
+            es_correcta: des.es_correcta,
+          }),
+        });
+        if (up.ok) {
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) {
+        // Fallback: crear (sin borrar la anterior)
+        const cr = await fetch(`${API}/opcion-respuestas`, {
+          method: "POST",
+          headers: authJSON,
+          body: JSON.stringify({
+            id_pregunta: pid,
+            texto_opcion: des.texto_opcion,
+            es_correcta: des.es_correcta,
+          }),
+        });
+        if (!cr.ok) {
+          const t = await cr.text();
+          throw new Error(`No se pudo actualizar/crear opción "${des.texto_opcion}": ${t || cr.status}`);
+        }
+        const cjson = await cr.clone().json().catch(() => null);
+        const newId = cjson?.id ?? cjson?.data?.id ?? null;
+        if (newId) nuevosIds[des.clave] = newId;
+      }
+    } else {
+      // CREATE
       const res = await fetch(`${API}/opcion-respuestas`, {
         method: "POST",
         headers: authJSON,
@@ -84,57 +125,16 @@ async function syncOpciones({
         const t = await res.text();
         throw new Error(`Error al crear opción "${des.texto_opcion}": ${t || res.status}`);
       }
-    } else {
-      // Actualizar si cambió correcta o texto
-      const needsUpdate =
-        Number(found.es_correcta) !== Number(des.es_correcta) ||
-        norm(found.texto_opcion ?? found.texto) !== norm(des.texto_opcion);
-
-      if (needsUpdate) {
-        let ok = false;
-        for (const method of ["PUT", "PATCH"]) {
-          const up = await fetch(`${API}/opcion-respuestas/${found.id}`, {
-            method,
-            headers: authJSON,
-            body: JSON.stringify({
-              id_pregunta: pid,
-              texto_opcion: des.texto_opcion,
-              es_correcta: des.es_correcta,
-            }),
-          });
-          if (up.ok) { ok = true; break; }
-        }
-        if (!ok) {
-          // Fallback: delete + create
-          await fetch(`${API}/opcion-respuestas/${found.id}`, { method: "DELETE", headers: authHeaders }).catch(() => {});
-          const cr = await fetch(`${API}/opcion-respuestas`, {
-            method: "POST",
-            headers: authJSON,
-            body: JSON.stringify({
-              id_pregunta: pid,
-              texto_opcion: des.texto_opcion,
-              es_correcta: des.es_correcta,
-            }),
-          });
-          if (!cr.ok) {
-            const t = await cr.text();
-            throw new Error(`Error al recrear opción "${des.texto_opcion}": ${t || cr.status}`);
-          }
-        }
-      }
-
-      // Marcamos para saber cuáles sobran
-      mapExistByText.delete(key);
+      const rj = await res.clone().json().catch(() => null);
+      const newId = rj?.id ?? rj?.data?.id ?? null;
+      if (newId) nuevosIds[des.clave] = newId;
     }
   }
 
-  // 4) Borrar las que ya no están
-  for (const [, sob] of mapExistByText) {
-    await fetch(`${API}/opcion-respuestas/${sob.id}`, {
-      method: "DELETE",
-      headers: authHeaders,
-    }).catch(() => {});
-  }
+  // 4) No borres sobrantes (backend devuelve 403). El front usará solo A..D.
+
+  // 5) Actualiza estado local de IDs
+  if (typeof setOpIdsState === "function") setOpIdsState(nuevosIds);
 }
 
 export default function CrearPregunta() {
@@ -145,6 +145,7 @@ export default function CrearPregunta() {
 
   // ===== Estado base =====
   const [pregunta, setPregunta] = useState("");
+  
   const [explicacion, setExplicacion] = useState("");
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -163,8 +164,11 @@ export default function CrearPregunta() {
   const [dificultad, setDificultad] = useState("");
   const [tipo, setTipo] = useState("");
 
-  // ===== Opciones =====
+  // ===== Opciones y IDs =====
   const [opciones, setOpciones] = useState({ A: "", B: "", C: "", D: "" });
+  const [opIds, setOpIds] = useState({ A: null, B: null, C: null, D: null });
+
+  // ===== Correcta =====
   const [correcta, setCorrecta] = useState("A");
 
   // ===== Preview scale =====
@@ -172,10 +176,7 @@ export default function CrearPregunta() {
 
   // ===== Auth headers (memo) =====
   const token = localStorage.getItem("token");
-  const authHeaders = useMemo(
-    () => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token]
-  );
+  const authHeaders = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
 
   // Evitar sobreescritura del formulario tras la primera hidratación
   const hydratedRef = useRef(false);
@@ -197,7 +198,11 @@ export default function CrearPregunta() {
   };
 
   const safeJson = async (res) => {
-    try { return await res.clone().json(); } catch { return null; }
+    try {
+      return await res.clone().json();
+    } catch {
+      return null;
+    }
   };
 
   // ===== Cargar catálogos =====
@@ -242,11 +247,7 @@ export default function CrearPregunta() {
         const jp = await rp.json();
 
         let texto =
-          jp?.texto_pregunta ??
-          jp?.texto ??
-          jp?.enunciado ??
-          jp?.contenido ??
-          "";
+          jp?.texto_pregunta ?? jp?.texto ?? jp?.enunciado ?? jp?.contenido ?? "";
         texto = decodeHtml(String(texto));
 
         const exp = jp?.explicacion ?? jp?.explicación ?? "";
@@ -265,7 +266,7 @@ export default function CrearPregunta() {
         // re-montar editor para que muestre el valor
         setEditorKey((k) => k + 1);
 
-        // cargar opciones
+        // cargar opciones e IDs
         try {
           let ro = await fetch(`${API}/opcion-respuestas?pregunta=${editId}`, { headers: authHeaders });
           if (!ro.ok) {
@@ -276,14 +277,19 @@ export default function CrearPregunta() {
             const list = Array.isArray(jo) ? jo : (jo?.data ?? jo?.opciones ?? []);
             if (Array.isArray(list) && list.length) {
               const map = { A: "", B: "", C: "", D: "" };
+              const ids = { A: null, B: null, C: null, D: null };
               const ord = ["A", "B", "C", "D"];
               list.slice(0, 4).forEach((op, i) => {
                 map[ord[i]] = op?.texto_opcion ?? op?.texto ?? "";
+                ids[ord[i]] = op?.id ?? null;
                 if (op?.es_correcta == 1 || op?.es_correcta === true) {
                   setCorrecta(ord[i]);
                 }
               });
               setOpciones(map);
+              setOpIds(ids);
+            } else {
+              setOpIds({ A: null, B: null, C: null, D: null });
             }
           }
         } catch (e) {
@@ -299,7 +305,7 @@ export default function CrearPregunta() {
     };
 
     loadEdit();
-  // OJO: no pongas authHeaders en deps para no re-ejecutar y pisar cambios
+    // OJO: no pongas authHeaders en deps para no re-ejecutar y pisar cambios
   }, [isEdit, editId, loading]); 
 
   // ===== Helpers de tipo =====
@@ -312,7 +318,7 @@ export default function CrearPregunta() {
   const isVerdaderoFalso = selectedTipo ? /verdadero|falso/.test(tipoNombre) : tipo === "2";
   const isAbierta = selectedTipo ? /abierta|abierto|texto/.test(tipoNombre) : tipo === "3";
 
-  // Ajustar opciones por defecto al cambiar tipo
+  // Ajustar opciones/IDs por defecto al cambiar tipo
   useEffect(() => {
     if (isVerdaderoFalso) {
       // Para VF mantenemos fijos los textos
@@ -321,11 +327,15 @@ export default function CrearPregunta() {
         setCorrecta((c) => (c === "A" || c === "B" ? c : "A"));
         return next;
       });
+      // Conserva IDs de A/B si ya existen, nulifica C/D
+      setOpIds((prev) => ({ A: prev.A ?? null, B: prev.B ?? null, C: null, D: null }));
     } else if (isAbierta) {
       // Para abierta limpiamos incisos
       setOpciones({ A: "", B: "", C: "", D: "" });
       setCorrecta("A");
+      setOpIds({ A: null, B: null, C: null, D: null });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVerdaderoFalso, isAbierta]);
 
   const onChangeOpcion = (e) => {
@@ -378,25 +388,32 @@ export default function CrearPregunta() {
           throw new Error(putJson?.message || (await putRes.text()) || "No se pudo actualizar la pregunta");
         }
 
-        // Sincronizar incisos si aplica
+        // Sincronizar incisos si aplica (sin DELETE) — no bloquear si falla
         const tNameSel = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
         const isOM = /opcion|múltiple|multiple/.test(tNameSel);
         const isVF = /verdadero|falso/.test(tNameSel);
 
         if (isOM || isVF) {
-          await syncOpciones({
-            API,
-            pid: Number(editId),
-            opcionesMap: opciones,
-            correctaClave: correcta,
-            isVF,
-            authJSON: headersAuthJson,
-            authHeaders,
-          });
+          try {
+            await syncOpciones({
+              API,
+              pid: Number(editId),
+              opcionesMap: opciones,
+              correctaClave: correcta,
+              isVF,
+              authJSON: headersAuthJson,
+              authHeaders,
+              opIdsState: opIds,
+              setOpIdsState: setOpIds,
+            });
+          } catch (e) {
+            console.warn("Sync de opciones falló (se ignora para no bloquear):", e);
+          }
         }
 
-        // Quedarse en pantalla
+        // Redirigir al banco de preguntas tras actualizar
         setMsg({ ok: true, text: "✅ Pregunta actualizada correctamente" });
+        setTimeout(() => navigate("/docente/banco-preguntas"), 600);
         setSaving(false);
         return;
       }
@@ -414,17 +431,74 @@ export default function CrearPregunta() {
         throw new Error(errTxt || "Error al crear la pregunta");
       }
 
-      let pid = preguntaData?.id || preguntaData?.data?.id || preguntaData?.pregunta?.id || null;
+      // 1) Intentar leer ID de muchas formas comunes en el body
+      let pid =
+        preguntaData?.id ??
+        preguntaData?.data?.id ??
+        preguntaData?.pregunta?.id ??
+        preguntaData?.data?.pregunta?.id ??
+        preguntaData?.insertId ??
+        preguntaData?.data?.insertId ??
+        preguntaData?.lastInsertId ??
+        preguntaData?.last_id ??
+        preguntaData?.id_pregunta ??
+        null;
+
+      // 2) Intentar headers típicos de ubicación
       if (!pid) {
-        const loc = preguntaRes.headers.get("Location") || preguntaRes.headers.get("location");
+        const loc =
+          preguntaRes.headers.get("Location") ||
+          preguntaRes.headers.get("location") ||
+          preguntaRes.headers.get("Content-Location") ||
+          preguntaRes.headers.get("content-location");
         if (loc) {
-          const m = loc.match(/\/preguntas\/(\d+)/) || loc.match(/\/(\d+)\s*$/);
+          const m =
+            loc.match(/\/preguntas\/(\d+)/) ||
+            loc.match(/\/(\d+)\s*$/) ||
+            loc.match(/(\d+)/);
           if (m) pid = Number(m[1]);
         }
       }
-      if (!pid) throw new Error("No se obtuvo el ID de la pregunta creada");
 
-      // Crear opciones si aplica
+      // 3) Fallback: pedir la más reciente y, si se puede, filtrar por texto_pregunta
+      if (!pid) {
+        const latestRes =
+          (await fetch(`${API}/preguntas?order=desc&limit=10`, { headers: authHeaders }).catch(() => null)) ||
+          (await fetch(`${API}/preguntas?sort=desc&limit=10`, { headers: authHeaders }).catch(() => null)) ||
+          (await fetch(`${API}/preguntas`, { headers: authHeaders }).catch(() => null));
+
+        if (latestRes?.ok) {
+          const lj = await safeJson(latestRes);
+          const list = Array.isArray(lj) ? lj : (lj?.data ?? lj?.preguntas ?? []);
+          if (Array.isArray(list) && list.length) {
+            // Buscar concordancia exacta por texto
+            const match = list.find(
+              (p) =>
+                (p?.texto_pregunta ?? p?.texto ?? p?.enunciado ?? p?.contenido ?? "") === pregunta
+            );
+            if (match?.id) {
+              pid = Number(match.id);
+            } else {
+              // Tomar el mayor id
+              const maxById = list.reduce((acc, cur) => {
+                const cid = Number(cur?.id ?? -1);
+                return cid > (acc?.id ?? -1) ? { id: cid } : acc;
+              }, null);
+              if (maxById?.id > 0) pid = maxById.id;
+            }
+          }
+        }
+      }
+
+      // Si no logramos PID, no bloquees: redirige y avisa (sin crear opciones).
+      if (!pid) {
+        console.warn("No se pudo determinar el ID tras crear; se continuará sin crear opciones.");
+        setMsg({ ok: true, text: "✅ Pregunta creada. No se detectó ID para crear opciones." });
+        setTimeout(() => navigate("/docente/banco-preguntas"), 700);
+        return;
+      }
+
+      // Crear opciones si aplica (ya con PID)
       const tName = (tipos.find((x) => String(x.id) === String(tipo))?.tipo || "").toLowerCase();
       const isOMCreate = /opcion|múltiple|multiple/.test(tName);
       const isVFCreate = /verdadero|falso/.test(tName);
@@ -436,6 +510,7 @@ export default function CrearPregunta() {
             id_pregunta: pid,
             texto_opcion: texto,
             es_correcta: correcta === clave ? 1 : 0,
+            clave,
           }));
 
         if (isVFCreate) {
@@ -445,24 +520,37 @@ export default function CrearPregunta() {
                 id_pregunta: pid,
                 texto_opcion: label,
                 es_correcta: correcta === k ? 1 : 0,
+                clave: k,
               });
             }
           };
           ensure("Verdadero", "A");
           ensure("Falso", "B");
+          // Limitar a A/B
+          opcionesPayload = opcionesPayload.filter((o) => o.clave === "A" || o.clave === "B");
         }
 
+        // Crear y capturar IDs
+        const nuevos = { A: null, B: null, C: null, D: null };
         for (const opcion of opcionesPayload) {
           const res = await fetch(`${API}/opcion-respuestas`, {
             method: "POST",
             headers: headersAuthJson,
-            body: JSON.stringify(opcion),
+            body: JSON.stringify({
+              id_pregunta: opcion.id_pregunta,
+              texto_opcion: opcion.texto_opcion,
+              es_correcta: opcion.es_correcta,
+            }),
           });
           if (!res.ok) {
             const t = await res.text();
             throw new Error(`Error al guardar una opción: ${t || res.status}`);
           }
+          const rj = await res.clone().json().catch(() => null);
+          const newId = rj?.id ?? rj?.data?.id ?? null;
+          if (newId && opcion.clave) nuevos[opcion.clave] = newId;
         }
+        setOpIds(nuevos);
       }
 
       setMsg({ ok: true, text: "✅ Pregunta creada correctamente" });
