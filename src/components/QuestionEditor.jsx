@@ -42,7 +42,7 @@ export function QuestionEditor({ value, onChange }) {
       <div className="flex items-center justify-between">
         
         <div className="flex items-center gap-2">
-         
+main
           <input
             ref={fileInputRef}
             type="file"

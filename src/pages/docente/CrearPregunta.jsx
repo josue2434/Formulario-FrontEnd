@@ -429,6 +429,7 @@ export default function CrearPregunta() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">Contenido (enunciado)*</label>
+ main
             </div>
             {/* 👇 clave para forzar re-montaje cuando cargamos en edición */}
             <QuestionEditor key={editorKey} value={pregunta} onChange={setPregunta} />
