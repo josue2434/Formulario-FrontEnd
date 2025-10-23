@@ -8,6 +8,7 @@ import Perfil from "../pages/docente/Perfil";
 import BancoPreguntas from "../pages/docente/BancoPreguntas";
 import CrearActividad from "../pages/docente/CrearActividad";
 import CrearPregunta  from "../pages/docente/CrearPregunta";
+import SeleccionarPreguntas from "../pages/docente/SeleccionarPreguntas";
 
 export default function DocenteRouter() {
   return (
@@ -25,6 +26,8 @@ export default function DocenteRouter() {
         <Route path="crear-actividad" element={<CrearActividad />} />
         {/* /docente/crear-pregunta */}
          <Route path="crear-pregunta" element={<CrearPregunta />} />
+         {/* Sub-página: sólo selección */}
+         <Route path="banco-preguntas/seleccionar" element={<SeleccionarPreguntas />} />
         {/* Fallback dentro de /docente */}
         <Route path="*" element={<Navigate to="." replace />} />
       </Route>

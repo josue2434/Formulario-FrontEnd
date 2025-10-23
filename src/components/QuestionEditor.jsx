@@ -1,61 +1,50 @@
 // src/components/QuestionEditor.jsx
-import { useRef, useState } from "react";
-import MDEditor from "@uiw/react-md-editor";
+import MDEditor, { commands } from "@uiw/react-md-editor";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import "katex/dist/katex.min.css";
 
-export function QuestionEditor({ value, onChange }) {
-  const [v, setV] = useState(value || "");
-  const fileInputRef = useRef(null);
-
+export function QuestionEditor({ value = "", onChange }) {
   const onChangeWrapped = (val) => {
-    setV(val || "");
-    onChange?.(val || "");
+    onChange?.(val ?? "");
   };
 
-  // Subida de imagen → inserta ![](url)
-  const insertImage = async (file) => {
-    if (!file) return;
-    const form = new FormData();
-    form.append("image", file);
-
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/docente/uploads/images`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      body: form,
-    });
-    const data = await res.json();
-    if (!res.ok || !data?.url) throw new Error(data?.message || "No se pudo subir la imagen");
-
-    const mdImage = `
-
-![imagen](${data.url})
-
-`;
-    onChangeWrapped((v || "") + mdImage);
-  };
+  // Toolbar básica sin preview
+  const basicCommands = [
+    commands.bold,
+    commands.italic,
+    commands.strikethrough,
+    commands.hr,
+    commands.title,
+    commands.link,
+    commands.quote,
+    commands.code,
+    commands.unorderedListCommand,
+    commands.orderedListCommand,
+    commands.checkedListCommand,
+  ];
 
   return (
     <div className="space-y-3" data-color-mode="light">
-      <div className="flex items-center justify-between">
-        
-        <div className="flex items-center gap-2">
-          
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => insertImage(e.target.files?.[0])}
-          />
-        </div>
-      </div>
+      {/* CSS para eliminar cualquier vista previa interna */}
+      <style>{`
+        .w-md-editor-content .w-md-editor-preview {
+          display: none !important;
+        }
+        .w-md-editor-content {
+          grid-template-columns: 1fr !important;
+        }
+      `}</style>
 
       <div className="border rounded-xl overflow-hidden shadow-sm">
         <MDEditor
-          value={v}
+          preview="edit"            // Solo modo edición
+          visibleDragbar={false}
+          hideToolbar={false}
+          commands={basicCommands}  // Comandos básicos
+          extraCommands={[]}        // Sin fullscreen ni ayuda
+          value={value}
           onChange={onChangeWrapped}
           height={300}
           previewOptions={{
@@ -67,3 +56,4 @@ export function QuestionEditor({ value, onChange }) {
     </div>
   );
 }
+
