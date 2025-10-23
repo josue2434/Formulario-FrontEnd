@@ -44,36 +44,55 @@ export const AuthProvider = ({ children }) => {
   // Estrategia:
   //   1) GET /api/usuario/alumno -> si 200 => /alumno
   //   2) GET /api/usuario/docente -> si 200 => /docente o /admin (si es_superusuario)
-  const detectRole = async () => {
-    // ¿Alumno?
-    try {
-      const { data } = await api.get("/usuario/alumno");
-      return { route: "/alumno", role: "alumno", data };
-    } catch (_) {}
+  
+const detectRole = async () => {
+  // 1) ¿Alumno?
+  try {
+    const rAlumno = await api.get("/usuario/alumno", {
+      validateStatus: () => true, // <-- evita excepción en 403
+    });
+    if (rAlumno.status === 200) {
+      return { route: "/alumno", role: "alumno", data: rAlumno.data };
+    }
+  } catch (_) {
+    /* silencio */
+  }
 
-    // ¿Docente o Super?
-    try {
-      const { data } = await api.get("/usuario/docente");
+  // 2) ¿Docente o Super?
+  try {
+    const rDoc = await api.get("/usuario/docente", {
+      validateStatus: () => true, // <-- evita excepción en 403
+    });
+    if (rDoc.status === 200) {
+      const d = rDoc.data;
       const esSuper =
-        truthy(data?.es_superusuario) ||
-        truthy(data?.docente?.es_superusuario) ||
-        truthy(data?.usuario?.docente?.es_superusuario);
+        truthy(d?.es_superusuario) ||
+        truthy(d?.docente?.es_superusuario) ||
+        truthy(d?.usuario?.docente?.es_superusuario);
       return {
         route: esSuper ? "/admin" : "/docente",
         role: esSuper ? "superusuario" : "docente",
-        data,
+        data: d,
       };
-    } catch (_) {}
+    }
+  } catch (_) {
+    /* silencio */
+  }
 
-    // Fallback
-    return { route: "/", role: "desconocido" };
-  };
+  // 3) Fallback
+  return { route: "/", role: "desconocido" };
+};
+
 
   // ===== Redirigir según rol detectado =====
-  const resolveRoleAndRedirect = async (navigate) => {
-    const { route } = await detectRole();
-    navigate(route, { replace: true });
-  };
+const resolveRoleAndRedirect = async (navigate) => {
+  const { route, role } = await detectRole();
+  if (role === "desconocido") {
+    return navigate("/login", { replace: true });
+  }
+  navigate(route, { replace: true });
+};
+
 
   return (
     <AuthContext.Provider

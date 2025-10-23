@@ -40,15 +40,9 @@ export function QuestionEditor({ value, onChange }) {
   return (
     <div className="space-y-3" data-color-mode="light">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-500">Markdown + LaTeX (KaTeX) + Imágenes</span>
+        
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-          >
-            Imagen
-          </button>
+         
           <input
             ref={fileInputRef}
             type="file"
