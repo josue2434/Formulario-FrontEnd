@@ -3,101 +3,217 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../../api/axiosClient"; // debe tener baseURL: "/api" e interceptor de token
+import api from "../../api/axiosClient"; // baseURL: "/api" + interceptor token
+
+const LS_SEL = "seleccion-preguntas";
+const LS_FORM = "crear-actividad-form";
 
 export default function CrearActividad() {
   const navigate = useNavigate();
 
-  // ===== Tipo =====
+  // ===== Estado base (se puede sobreescribir con LS) =====
   const [tipo, setTipo] = useState("practica"); // "practica" | "examen"
-
-  // ===== Comunes =====
-  const [idCurso, setIdCurso] = useState(1); // TODO: traer desde tu contexto/selector de curso
+  const [idCurso, setIdCurso] = useState(1);
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [cantidadReactivos, setCantidadReactivos] = useState(5);
   const [intentosPermitidos, setIntentosPermitidos] = useState(1);
   const [umbralAprobacion, setUmbralAprobacion] = useState(60);
 
-  // ===== Examen =====
+  // Examen
   const [modo, setModo] = useState("");
-  const [tiempoLimite, setTiempoLimite] = useState(""); // minutos (nullable)
+  const [tiempoLimite, setTiempoLimite] = useState(""); // minutos
   const [aleatorizarPreguntas, setAleatorizarPreguntas] = useState(true);
   const [aleatorizarOpciones, setAleatorizarOpciones] = useState(true);
 
-  // ===== Filtros opcionales (ambos controladores los aceptan) =====
-  const [idTema, setIdTema] = useState("");
-  const [idDificultad, setIdDificultad] = useState("");
-  const [idNivelBloom, setIdNivelBloom] = useState("");
-  const [idTipoPregunta, setIdTipoPregunta] = useState("");
-
-  // ===== Selección manual desde sub-página =====
+  // Selección manual
   const [seleccion, setSeleccion] = useState([]); // [{id, texto_pregunta}]
 
-  // ===== UI =====
+  // UI
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // Restaura selección guardada por la sub-página
-  useEffect(() => {
+  // Derivados
+  const maxReactivos = useMemo(() => Number(cantidadReactivos) || 0, [cantidadReactivos]);
+  const restante = Math.max(0, maxReactivos - seleccion.length);
+  const topeAlcanzado = maxReactivos > 0 && seleccion.length >= maxReactivos;
+
+  // ---------- Helpers de LS ----------
+  const leerSeleccionLS = () => {
     try {
-      const saved = JSON.parse(localStorage.getItem("seleccion-preguntas") || "[]");
-      if (Array.isArray(saved)) {
-        setSeleccion(
-          saved.map((x) => ({
-            id: Number(x.id),
-            texto_pregunta: x.texto_pregunta || `Pregunta #${x.id}`,
-          }))
-        );
-      }
+      const raw = localStorage.getItem(LS_SEL);
+      const arr = JSON.parse(raw || "[]");
+      if (!Array.isArray(arr)) return [];
+      const normalizada = arr.map((x) => ({
+        id: Number(x.id),
+        texto_pregunta: x.texto_pregunta || `Pregunta #${x.id}`,
+      }));
+      return maxReactivos > 0 ? normalizada.slice(0, maxReactivos) : normalizada;
+    } catch {
+      return [];
+    }
+  };
+
+  const persistirSeleccion = (arr) => {
+    try {
+      localStorage.setItem(LS_SEL, JSON.stringify(arr));
     } catch {}
+  };
+
+  const leerFormularioLS = () => {
+    try {
+      const raw = localStorage.getItem(LS_FORM);
+      const f = JSON.parse(raw || "{}");
+      return f && typeof f === "object" ? f : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const persistirFormulario = () => {
+    try {
+      const payload = {
+        tipo,
+        idCurso,
+        nombre,
+        descripcion,
+        cantidadReactivos,
+        intentosPermitidos,
+        umbralAprobacion,
+        modo,
+        tiempoLimite,
+        aleatorizarPreguntas,
+        aleatorizarOpciones,
+      };
+      localStorage.setItem(LS_FORM, JSON.stringify(payload));
+    } catch {}
+  };
+
+  const limpiarPersistencia = () => {
+    try {
+      localStorage.removeItem(LS_FORM);
+      localStorage.removeItem(LS_SEL);
+    } catch {}
+  };
+
+  // ---------- Carga inicial: restaurar formulario + selección ----------
+  useEffect(() => {
+    // Restaurar formulario (si existe)
+    const f = leerFormularioLS();
+    if (f && Object.keys(f).length) {
+      if (typeof f.tipo === "string") setTipo(f.tipo);
+      if (f.idCurso != null) setIdCurso(Number(f.idCurso));
+      if (typeof f.nombre === "string") setNombre(f.nombre);
+      if (typeof f.descripcion === "string") setDescripcion(f.descripcion);
+      if (f.cantidadReactivos != null) setCantidadReactivos(Number(f.cantidadReactivos));
+      if (f.intentosPermitidos != null) setIntentosPermitidos(Number(f.intentosPermitidos));
+      if (f.umbralAprobacion != null) setUmbralAprobacion(Number(f.umbralAprobacion));
+      if (typeof f.modo === "string") setModo(f.modo);
+      if (f.tiempoLimite != null) setTiempoLimite(String(f.tiempoLimite ?? ""));
+      if (typeof f.aleatorizarPreguntas === "boolean") setAleatorizarPreguntas(f.aleatorizarPreguntas);
+      if (typeof f.aleatorizarOpciones === "boolean") setAleatorizarOpciones(f.aleatorizarOpciones);
+    }
+
+    // Restaurar selección (si existe)
+    const inicialSel = leerSeleccionLS();
+    setSeleccion(inicialSel);
+    persistirSeleccion(inicialSel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Validaciones mínimas
+  // ---------- Auto-guardar formulario en LS ante cualquier cambio ----------
+  useEffect(() => {
+    persistirFormulario();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    tipo,
+    idCurso,
+    nombre,
+    descripcion,
+    cantidadReactivos,
+    intentosPermitidos,
+    umbralAprobacion,
+    modo,
+    tiempoLimite,
+    aleatorizarPreguntas,
+    aleatorizarOpciones,
+  ]);
+
+  // ---------- Recarga al volver del selector (recuperar foco) ----------
+  useEffect(() => {
+    const onFocus = () => {
+      const arr = leerSeleccionLS();
+      setSeleccion(arr);
+      persistirSeleccion(arr);
+      // el formulario ya se mantiene en estado + LS
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxReactivos]);
+
+  // ---------- Recorte si baja el tope ----------
+  useEffect(() => {
+    if (maxReactivos > 0 && seleccion.length > maxReactivos) {
+      const trimmed = seleccion.slice(0, maxReactivos);
+      setSeleccion(trimmed);
+      persistirSeleccion(trimmed);
+    }
+  }, [maxReactivos, seleccion]);
+
+  // ---------- Validaciones ----------
   const errores = useMemo(() => {
     const e = [];
     if (!idCurso) e.push("El curso es obligatorio.");
     if (!nombre.trim()) e.push("El nombre es obligatorio.");
-    if (Number(cantidadReactivos) <= 0) e.push("La cantidad de reactivos debe ser mayor a 0.");
+    if (maxReactivos <= 0) e.push("La cantidad de reactivos debe ser mayor a 0.");
     if (Number(intentosPermitidos) <= 0) e.push("Los intentos permitidos deben ser mayor a 0.");
     if (Number(umbralAprobacion) < 60) e.push("El umbral de aprobación debe ser 60 o mayor.");
+
+    // Regla: si usas selección manual, debe coincidir con la cantidad
+    if (seleccion.length === 0) {
+      e.push("Debes seleccionar preguntas desde el Banco.");
+    } else if (seleccion.length !== maxReactivos) {
+      e.push(
+        `Seleccionaste ${seleccion.length} pregunta(s), pero estableciste ${maxReactivos} reactivo(s). Deben coincidir exactamente.`
+      );
+    }
+
     if (tipo === "examen") {
       if (aleatorizarPreguntas === undefined) e.push("Falta aleatorizar_preguntas.");
       if (aleatorizarOpciones === undefined) e.push("Falta aleatorizar_opciones.");
     }
     return e;
-  }, [idCurso, nombre, cantidadReactivos, intentosPermitidos, umbralAprobacion, tipo, aleatorizarPreguntas, aleatorizarOpciones]);
+  }, [
+    idCurso,
+    nombre,
+    maxReactivos,
+    intentosPermitidos,
+    umbralAprobacion,
+    tipo,
+    aleatorizarPreguntas,
+    aleatorizarOpciones,
+    seleccion.length,
+  ]);
 
-  // Payload base para ambos controladores
-  const basePayload = () => {
-    const b = {
-      id_curso: Number(idCurso),
-      nombre: nombre.trim(),
-      descripcion: descripcion || null,
-      cantidad_reactivos: Number(cantidadReactivos),
-      intentos_permitidos: Number(intentosPermitidos),
-      umbral_aprobacion: Number(umbralAprobacion),
-    };
-    // Filtros opcionales
-    if (idTema) b.id_tema = Number(idTema);
-    if (idDificultad) b.id_dificultad = Number(idDificultad);
-    if (idNivelBloom) b.id_nivel_bloom = Number(idNivelBloom);
-    if (idTipoPregunta) b.id_tipo_pregunta = Number(idTipoPregunta);
-    return b;
-  };
+  // ---------- Payload ----------
+  const basePayload = () => ({
+    id_curso: Number(idCurso),
+    nombre: nombre.trim(),
+    descripcion: descripcion || null,
+    cantidad_reactivos: maxReactivos,
+    intentos_permitidos: Number(intentosPermitidos),
+    umbral_aprobacion: Number(umbralAprobacion),
+  });
 
-  // === Llamadas a API con rutas EXACTAS de tu backend ===
-
-  // Crea actividad según tipo
+  // ---------- API: crear actividad (compat con tu controlador de Examen) ----------
   const createActividad = async () => {
     const base = basePayload();
 
     if (tipo === "practica") {
-      // RUTA REAL: POST /actividad/practica
       const res = await api.post("/actividad/practica", base, { validateStatus: () => true });
-      if (res.status < 200 || res.status >= 300) {
+      if (res.status < 200 || res.status >= 300)
         throw new Error(res.data?.message || res.data?.error || `HTTP ${res.status}`);
-      }
       const j = res.data || {};
       const actividadId =
         j?.actividad?.id || j?.id || j?.data?.id || j?.actividad_practica?.id || j?.actividad_examen?.id;
@@ -105,21 +221,22 @@ export default function CrearActividad() {
       return Number(actividadId);
     }
 
-    // EXAMEN
+    // EXAMEN: tu controlador puede adjuntar preguntas automáticamente según filtros.
+    // Enviamos el payload completo (sin filtros si no los usas) y luego manejamos la vinculación manual
+    // tolerando duplicados (por si el back ya adjuntó).
     const payload = {
       ...base,
       modo: modo || null,
       tiempo_limite: String(tiempoLimite).trim() ? Number(tiempoLimite) : null,
       aleatorizar_preguntas: Boolean(aleatorizarPreguntas),
       aleatorizar_opciones: Boolean(aleatorizarOpciones),
-      estado: true, // requerido por tu controlador de examen
+      estado: true,
+      // Si en el futuro reactivas filtros, agrégalos aquí (id_tema, id_dificultad, etc.)
     };
 
-    // RUTA REAL: POST /actividad-examenes
     const res = await api.post("/actividad-examenes", payload, { validateStatus: () => true });
-    if (res.status < 200 || res.status >= 300) {
+    if (res.status < 200 || res.status >= 300)
       throw new Error(res.data?.message || res.data?.error || `HTTP ${res.status}`);
-    }
     const j = res.data || {};
     const actividadId =
       j?.actividad?.id || j?.id || j?.data?.id || j?.actividad_practica?.id || j?.actividad_examen?.id;
@@ -127,20 +244,33 @@ export default function CrearActividad() {
     return Number(actividadId);
   };
 
-  // Vincula preguntas seleccionadas
+  // ---------- API: vincular preguntas (dedupe + tolerar duplicados del back) ----------
   const attachSeleccion = async (actividadId) => {
-    if (!seleccion.length) return;
+    const cant = Number(maxReactivos) || 0;
+    if (!seleccion.length || cant <= 0) return;
+
+    // limitar + dedupe
+    const limitada = seleccion.slice(0, cant);
+    const unicoPorId = Array.from(new Map(limitada.map((p) => [Number(p.id), { ...p, id: Number(p.id) }])).values());
+
+    const isSuccess = (res) => res && (res.status === 200 || res.status === 201);
+    const shouldIgnoreDup = (res) => {
+      const msg = (res?.data?.message || res?.data?.error || "").toString().toLowerCase();
+      return (
+        res?.status === 500 &&
+        (msg.includes("duplicate entry") || msg.includes("duplicate") || msg.includes("integrity constraint"))
+      );
+    };
 
     if (tipo === "practica") {
-      // RUTA REAL: POST /pregunta/actividad-practica
-      for (let i = 0; i < seleccion.length; i++) {
-        const pid = Number(seleccion[i].id);
+      for (let i = 0; i < unicoPorId.length; i++) {
+        const pid = unicoPorId[i].id;
         const res = await api.post(
           "/pregunta/actividad-practica",
           { id_actividad_practica: Number(actividadId), id_pregunta: pid, orden: i + 1 },
           { validateStatus: () => true }
         );
-        if (res.status < 200 || res.status >= 300) {
+        if (!isSuccess(res) && !shouldIgnoreDup(res)) {
           throw new Error(
             `Error vinculando (práctica) #${pid}: ${res.data?.message || res.data?.error || `HTTP ${res.status}`}`
           );
@@ -149,15 +279,15 @@ export default function CrearActividad() {
       return;
     }
 
-    // EXAMEN → RUTA REAL: POST /pregunta-actividad-examenes
-    for (let i = 0; i < seleccion.length; i++) {
-      const pid = Number(seleccion[i].id);
+    // EXAMEN (el back podría haber adjuntado ya). Posteamos igual pero ignoramos duplicados.
+    for (let i = 0; i < unicoPorId.length; i++) {
+      const pid = unicoPorId[i].id;
       const res = await api.post(
         "/pregunta-actividad-examenes",
         { id_actividad_examen: Number(actividadId), id_pregunta: pid, orden: i + 1 },
         { validateStatus: () => true }
       );
-      if (res.status < 200 || res.status >= 300) {
+      if (!isSuccess(res) && !shouldIgnoreDup(res)) {
         throw new Error(
           `Error vinculando (examen) #${pid}: ${res.data?.message || res.data?.error || `HTTP ${res.status}`}`
         );
@@ -165,7 +295,7 @@ export default function CrearActividad() {
     }
   };
 
-  // Guardar
+  // ---------- Guardar ----------
   const guardar = async (e) => {
     e?.preventDefault?.();
     setMsg(null);
@@ -177,11 +307,14 @@ export default function CrearActividad() {
 
     try {
       setSaving(true);
+      // guardamos por si algo recarga
+      persistirFormulario();
+
       const actividadId = await createActividad();
       await attachSeleccion(actividadId);
 
-      // Limpia selección persistida
-      localStorage.removeItem("seleccion-preguntas");
+      // Limpiar persistencia solo al éxito
+      limpiarPersistencia();
 
       setMsg({
         ok: true,
@@ -197,7 +330,22 @@ export default function CrearActividad() {
     }
   };
 
-  // UI
+  // ---------- Ir al selector (persistir antes de navegar) ----------
+  const irASelector = () => {
+    if (maxReactivos <= 0) {
+      setMsg({ ok: false, text: "Define primero una cantidad de reactivos mayor a 0." });
+      return;
+    }
+    persistirFormulario(); // <- evita que se “pierdan” los datos de arriba
+    const selectedIds = encodeURIComponent(JSON.stringify(seleccion.map((s) => s.id)));
+    navigate(
+      `/docente/banco-preguntas/seleccionar?returnTo=${encodeURIComponent(
+        "/docente/crear-actividad"
+      )}&max=${maxReactivos}&selected=${selectedIds}`
+    );
+  };
+
+  // ---------- UI ----------
   return (
     <div className="max-w-5xl mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">
@@ -256,6 +404,9 @@ export default function CrearActividad() {
                 onChange={(e) => setCantidadReactivos(e.target.value)}
                 className="w-full h-10 border border-gray-300 rounded-xl px-3"
               />
+              <p className="text-xs text-gray-500">
+                Debe coincidir con el número de preguntas seleccionadas abajo.
+              </p>
             </div>
 
             <div className="space-y-1">
@@ -346,24 +497,31 @@ export default function CrearActividad() {
           </section>
         )}
 
-        {/* Selección manual desde sub-página */}
+        {/* Selección manual */}
         <section>
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-800">🧩 Selección de preguntas (manual)</h2>
-            <button
-              type="button"
-              onClick={() =>
-                navigate(`/docente/banco-preguntas/seleccionar?returnTo=/docente/crear-actividad`)
-              }
-              className="h-9 px-4 rounded-xl border border-gray-300 bg-white hover:bg-gray-50"
-            >
-              Seleccionar desde Banco
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">
+                Restantes: <strong>{restante}</strong> / {maxReactivos}
+              </span>
+              <button
+                type="button"
+                onClick={irASelector}
+                disabled={topeAlcanzado || maxReactivos <= 0}
+                className={`h-9 px-4 rounded-xl border ${
+                  topeAlcanzado ? "border-gray-200 text-gray-400 bg-gray-50" : "border-gray-300 bg-white hover:bg-gray-50"
+                }`}
+                title={topeAlcanzado ? "Ya alcanzaste el máximo de reactivos" : "Seleccionar desde Banco"}
+              >
+                {topeAlcanzado ? "Límite alcanzado" : "Seleccionar desde Banco"}
+              </button>
+            </div>
           </div>
 
           {seleccion.length === 0 ? (
             <p className="text-sm text-gray-500 mt-3">
-              No hay preguntas seleccionadas. Si no seleccionas, el backend tomará preguntas por filtros/aleatoriedad (según tu configuración).
+              No hay preguntas seleccionadas. Debes seleccionar tantas preguntas como indique la “Cantidad de reactivos”.
             </p>
           ) : (
             <div className="mt-3 space-y-2">
@@ -375,65 +533,32 @@ export default function CrearActividad() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => setSeleccion((curr) => curr.filter((x) => x.id !== p.id))}
+                    onClick={() => {
+                      const nueva = seleccion.filter((x) => x.id !== p.id);
+                      setSeleccion(nueva);
+                      persistirSeleccion(nueva);
+                    }}
                     className="h-9 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
                   >
                     Quitar
                   </button>
                 </div>
               ))}
+              <p className="text-xs text-gray-500">
+                Seleccionadas: {seleccion.length} — Deben ser exactamente {maxReactivos}.
+              </p>
             </div>
           )}
-        </section>
-
-        {/* Filtros opcionales (back los usa al crear si no seleccionas) */}
-        <section>
-          <h2 className="text-base font-semibold text-gray-800">🎯 Filtros opcionales</h2>
-          <div className="grid md:grid-cols-2 gap-4 mt-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Tema (opcional)</label>
-              <input
-                type="number"
-                value={idTema}
-                onChange={(e) => setIdTema(e.target.value)}
-                className="w-full border rounded-xl px-3 h-10"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Dificultad (opcional)</label>
-              <input
-                type="number"
-                value={idDificultad}
-                onChange={(e) => setIdDificultad(e.target.value)}
-                className="w-full border rounded-xl px-3 h-10"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Nivel Bloom (opcional)</label>
-              <input
-                type="number"
-                value={idNivelBloom}
-                onChange={(e) => setIdNivelBloom(e.target.value)}
-                className="w-full border rounded-xl px-3 h-10"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Tipo de pregunta (opcional)</label>
-              <input
-                type="number"
-                value={idTipoPregunta}
-                onChange={(e) => setIdTipoPregunta(e.target.value)}
-                className="w-full border rounded-xl px-3 h-10"
-              />
-            </div>
-          </div>
         </section>
 
         {/* Acciones */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             type="button"
-            onClick={() => navigate("/docente/dashboard")}
+            onClick={() => {
+              limpiarPersistencia();
+              navigate("/docente/dashboard");
+            }}
             className="h-10 px-5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Cancelar
@@ -448,9 +573,7 @@ export default function CrearActividad() {
         </div>
 
         {msg && (
-          <p className={`text-sm ${msg.ok ? "text-green-600" : "text-red-600"} mt-2`}>
-            {msg.text}
-          </p>
+          <p className={`text-sm ${msg.ok ? "text-green-600" : "text-red-600"} mt-2`}>{msg.text}</p>
         )}
       </form>
     </div>
