@@ -1,27 +1,28 @@
-// src/components/sidebarAlumno.jsx
-import { NavLink, useNavigate } from "react-router-dom"
-import { LayoutDashboard, User, BookOpen, LogOut } from "lucide-react"
+// src/components/SidebarAlumno.jsx
+import { NavLink, useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard,
+  User,
+  BookOpen,
+  ClipboardList,
+  LogOut,
+} from "lucide-react";
 
 export default function SidebarAlumno() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
-  // 🔹 Función para cerrar sesión
   const handleLogout = () => {
-    // Limpia el token o datos guardados del usuario
-    localStorage.removeItem("token")
-    localStorage.removeItem("user")
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
+  };
 
-    // Redirige al login
-    navigate("/login")
-  }
-
-  // 🔹 Menú de navegación del alumno
   const menuItems = [
     {
-      path: "/alumno",
+      path: "/alumno/dashboard",
       icon: LayoutDashboard,
       label: "Inicio",
-      end: true,
+      end: false,
     },
     {
       path: "/alumno/perfil",
@@ -33,25 +34,32 @@ export default function SidebarAlumno() {
       icon: BookOpen,
       label: "Mis Cursos",
     },
-  ]
+    {
+      path: "/alumno/actividades", // 👈 NUEVO
+      icon: ClipboardList,
+      label: "Actividades",
+    },
+  ];
 
   return (
     <aside className="w-64 min-h-screen bg-white border-r border-gray-200 flex flex-col">
-      {/* Header del sidebar */}
+      {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
             <User className="w-6 h-6 text-indigo-600" />
           </div>
-          <span className="font-semibold text-gray-800">Alumno</span>
+          <span className="font-semibold text-gray-800 leading-tight">
+            Alumno
+          </span>
         </div>
       </div>
 
-      {/* Menú de navegación */}
+      {/* Navegación */}
       <nav className="flex-1 p-4">
         <ul className="space-y-2">
           {menuItems.map((item) => {
-            const Icon = item.icon
+            const Icon = item.icon;
             return (
               <li key={item.path}>
                 <NavLink
@@ -69,12 +77,12 @@ export default function SidebarAlumno() {
                   <span className="font-medium">{item.label}</span>
                 </NavLink>
               </li>
-            )
+            );
           })}
         </ul>
       </nav>
 
-      {/* Footer del sidebar */}
+      {/* Cerrar sesión */}
       <div className="p-4 border-t border-gray-200">
         <button
           onClick={handleLogout}
@@ -85,5 +93,5 @@ export default function SidebarAlumno() {
         </button>
       </div>
     </aside>
-  )
+  );
 }
