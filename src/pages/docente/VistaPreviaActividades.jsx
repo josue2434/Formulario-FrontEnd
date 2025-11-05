@@ -172,9 +172,17 @@ export default function VistaPreviaActividades() {
 
                 {/* Acciones */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <button className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50">
-                    <Eye className="w-4 h-4" /> Ver detalles
-                  </button>
+                  <button
+  onClick={() =>
+    navigate(
+      `/docente/visualizar/${act.tipo_actividad === "Examen" ? "examen" : "practica"}/${act.id}`
+    )
+  }
+  className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
+>
+  <Eye className="w-4 h-4" /> Visualizar
+</button>
+
                   <button
                     onClick={() =>
                       navigate(`/docente/crear-actividad?edit=${act.id}&tipo=${act.tipo_actividad.toLowerCase()}`)
