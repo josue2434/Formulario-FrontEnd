@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom"
-import { LayoutDashboard, User, BookOpen, FileEdit, LogOut } from "lucide-react"
+import { LayoutDashboard, User, BookOpen, FileEdit, LogOut, ClipboardList } from "lucide-react"
 
 export default function Sidebar() {
   const navigate = useNavigate()
@@ -34,6 +34,11 @@ export default function Sidebar() {
       path: "/docente/crear-actividad",
       icon: FileEdit,
       label: "Crear actividad",
+    },
+    {
+      path: "/docente/actividades",
+      icon: ClipboardList,
+      label: "Mis Actividades",
     },
   ]
 
