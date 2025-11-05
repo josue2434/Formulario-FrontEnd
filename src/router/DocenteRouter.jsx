@@ -9,6 +9,7 @@ import BancoPreguntas from "../pages/docente/BancoPreguntas";
 import CrearActividad from "../pages/docente/CrearActividad";
 import CrearPregunta  from "../pages/docente/CrearPregunta";
 import SeleccionarPreguntas from "../pages/docente/SeleccionarPreguntas";
+import VistaPreviaActividades from "../pages/docente/VistaPreviaActividades";
 
 export default function DocenteRouter() {
   return (
@@ -24,6 +25,8 @@ export default function DocenteRouter() {
         <Route path="banco-preguntas" element={<BancoPreguntas />} />
         {/* /docente/crear-actividad */}
         <Route path="crear-actividad" element={<CrearActividad />} />
+        {/* /docente/actividades */}
+        <Route path="actividades" element={<VistaPreviaActividades />} />
         {/* /docente/crear-pregunta */}
          <Route path="crear-pregunta" element={<CrearPregunta />} />
          {/* Sub-página: sólo selección */}
