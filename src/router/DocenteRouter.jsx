@@ -11,6 +11,8 @@ import CrearPregunta  from "../pages/docente/CrearPregunta";
 import SeleccionarPreguntas from "../pages/docente/SeleccionarPreguntas";
 import VistaPreviaActividades from "../pages/docente/VistaPreviaActividades";
 
+import VisualizarActividad from "../pages/docente/VisualizarActividad";
+
 export default function DocenteRouter() {
   return (
     <Routes>
@@ -31,6 +33,9 @@ export default function DocenteRouter() {
          <Route path="crear-pregunta" element={<CrearPregunta />} />
          {/* Sub-página: sólo selección */}
          <Route path="banco-preguntas/seleccionar" element={<SeleccionarPreguntas />} />
+
+         <Route path="visualizar/:tipo/:id" element={<VisualizarActividad />} />
+
         {/* Fallback dentro de /docente */}
         <Route path="*" element={<Navigate to="." replace />} />
       </Route>
