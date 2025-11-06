@@ -94,6 +94,32 @@ export default function VistaPreviaActividades() {
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [actividades, docenteId, q, filtroTipo]);
 
+  // ===== Manejador de Archivar =====
+  const handleArchive = async (actividad) => {
+    const confirmacion = window.confirm(
+      `¿Estás seguro de que quieres archivar la actividad "${actividad.nombre}"?`
+    );
+    if (!confirmacion) return;
+
+    const endpoint =
+      actividad.tipo_actividad === "Examen"
+        ? `/actividad-examenes/${actividad.id}`
+        : `/actividad/practica/${actividad.id}`;
+
+    try {
+      const res = await api.delete(endpoint);
+      if (res.status === 200 || res.status === 204) {
+        // Eliminar la actividad de la lista local para actualizar la UI
+        setActividades((prev) =>
+          prev.filter((a) => !(a.id === actividad.id && a.tipo_actividad === actividad.tipo_actividad))
+        );
+        alert("Actividad archivada correctamente.");
+      }
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || "Error al archivar la actividad.");
+    }
+  };
+
   // ===== Renderizado =====
   if (loading) return <p className="text-gray-500">Cargando actividades...</p>;
   if (error) return <p className="text-red-500">Error: {error}</p>;
@@ -190,9 +216,6 @@ export default function VistaPreviaActividades() {
                     className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
                   >
                     <Edit className="w-4 h-4" /> Editar
-                  </button>
-                  <button className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white text-red-600 hover:bg-red-50">
-                    <Trash2 className="w-4 h-4" /> Archivar
                   </button>
                 </div>
               </div>

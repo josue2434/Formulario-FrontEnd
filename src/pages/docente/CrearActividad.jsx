@@ -1,8 +1,8 @@
 // src/pages/docente/CrearActividad.jsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../api/axiosClient"; // baseURL: "/api" + interceptor token
 
 const LS_SEL = "seleccion-preguntas";
@@ -10,6 +10,11 @@ const LS_FORM = "crear-actividad-form";
 
 export default function CrearActividad() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const editTipo = searchParams.get("tipo");
+  const isEdit = !!editId;
+  const hydratedRef = useRef(false);
 
   // ===== Estado base (se puede sobreescribir con LS) =====
   const [tipo, setTipo] = useState("practica"); // "practica" | "examen"
@@ -98,32 +103,84 @@ export default function CrearActividad() {
 
   // ---------- Carga inicial: restaurar formulario + selección ----------
   useEffect(() => {
-    // Restaurar formulario (si existe)
-    const f = leerFormularioLS();
-    if (f && Object.keys(f).length) {
-      if (typeof f.tipo === "string") setTipo(f.tipo);
-      if (f.idCurso != null) setIdCurso(Number(f.idCurso));
-      if (typeof f.nombre === "string") setNombre(f.nombre);
-      if (typeof f.descripcion === "string") setDescripcion(f.descripcion);
-      if (f.cantidadReactivos != null) setCantidadReactivos(Number(f.cantidadReactivos));
-      if (f.intentosPermitidos != null) setIntentosPermitidos(Number(f.intentosPermitidos));
-      if (f.umbralAprobacion != null) setUmbralAprobacion(Number(f.umbralAprobacion));
-      if (typeof f.modo === "string") setModo(f.modo);
-      if (f.tiempoLimite != null) setTiempoLimite(String(f.tiempoLimite ?? ""));
-      if (typeof f.aleatorizarPreguntas === "boolean") setAleatorizarPreguntas(f.aleatorizarPreguntas);
-      if (typeof f.aleatorizarOpciones === "boolean") setAleatorizarOpciones(f.aleatorizarOpciones);
+    const loadActivityForEdit = async () => {
+      if (!isEdit || hydratedRef.current) return;
+
+      try {
+        const endpoint = editTipo === 'examen' 
+          ? `/actividad-examenes/${editId}` 
+          : `/actividad/practica/${editId}`;
+        
+        const res = await api.get(endpoint);
+        const act = res.data?.actividad || res.data;
+
+        if (act) {
+          // Poblar el formulario con los datos de la actividad
+          setTipo(editTipo || 'practica');
+          setIdCurso(act.id_curso || 1);
+          setNombre(act.nombre || "");
+          setDescripcion(act.descripcion || "");
+          setCantidadReactivos(act.cantidad_reactivos || 5);
+          setIntentosPermitidos(act.intentos_permitidos || 1);
+          setUmbralAprobacion(act.umbral_aprobacion || 60);
+
+          if (editTipo === 'examen') {
+            setModo(act.modo || "");
+            setTiempoLimite(act.tiempo_limite || "");
+            setAleatorizarPreguntas(act.aleatorizar_preguntas ?? true);
+            setAleatorizarOpciones(act.aleatorizar_opciones ?? true);
+          }
+
+          // Cargar preguntas asociadas
+          if (act.preguntas && Array.isArray(act.preguntas)) {
+            const preguntasSeleccionadas = act.preguntas.map(p => ({
+              id: p.id,
+              texto_pregunta: p.texto_pregunta || `Pregunta #${p.id}`
+            }));
+            setSeleccion(preguntasSeleccionadas);
+            persistirSeleccion(preguntasSeleccionadas);
+          }
+        }
+      } catch (error) {
+        console.error("Error cargando la actividad para editar:", error);
+        setMsg({ ok: false, text: "No se pudo cargar la actividad para editar." });
+      } finally {
+        hydratedRef.current = true;
+      }
+    };
+
+    if (isEdit) {
+      loadActivityForEdit();
+    } else {
+      // Restaurar formulario desde LocalStorage (solo en modo creación)
+      const f = leerFormularioLS();
+      if (f && Object.keys(f).length) {
+        if (typeof f.tipo === "string") setTipo(f.tipo);
+        if (f.idCurso != null) setIdCurso(Number(f.idCurso));
+        if (typeof f.nombre === "string") setNombre(f.nombre);
+        if (typeof f.descripcion === "string") setDescripcion(f.descripcion);
+        if (f.cantidadReactivos != null) setCantidadReactivos(Number(f.cantidadReactivos));
+        if (f.intentosPermitidos != null) setIntentosPermitidos(Number(f.intentosPermitidos));
+        if (f.umbralAprobacion != null) setUmbralAprobacion(Number(f.umbralAprobacion));
+        if (typeof f.modo === "string") setModo(f.modo);
+        if (f.tiempoLimite != null) setTiempoLimite(String(f.tiempoLimite ?? ""));
+        if (typeof f.aleatorizarPreguntas === "boolean") setAleatorizarPreguntas(f.aleatorizarPreguntas);
+        if (typeof f.aleatorizarOpciones === "boolean") setAleatorizarOpciones(f.aleatorizarOpciones);
+      }
     }
 
-    // Restaurar selección (si existe)
-    const inicialSel = leerSeleccionLS();
-    setSeleccion(inicialSel);
-    persistirSeleccion(inicialSel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Solo restaurar selección desde LS si NO estamos en modo edición
+    if (!isEdit) {
+      const inicialSel = leerSeleccionLS();
+      setSeleccion(inicialSel);
+      persistirSeleccion(inicialSel);
+    }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------- Auto-guardar formulario en LS ante cualquier cambio ----------
   useEffect(() => {
-    persistirFormulario();
+    if (!isEdit) persistirFormulario(); // Solo guardar en LS en modo creación
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     tipo,
@@ -141,16 +198,17 @@ export default function CrearActividad() {
 
   // ---------- Recarga al volver del selector (recuperar foco) ----------
   useEffect(() => {
+    if (isEdit) return; // No queremos este comportamiento en modo edición
+
     const onFocus = () => {
       const arr = leerSeleccionLS();
       setSeleccion(arr);
       persistirSeleccion(arr);
-      // el formulario ya se mantiene en estado + LS
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxReactivos]);
+  }, [maxReactivos, isEdit]);
 
   // ---------- Recorte si baja el tope ----------
   useEffect(() => {
@@ -244,6 +302,42 @@ export default function CrearActividad() {
     return Number(actividadId);
   };
 
+  // ---------- API: actualizar actividad ----------
+  const updateActividad = async () => {
+    const base = basePayload();
+    let payload;
+    let endpoint;
+
+    if (tipo === "practica") {
+      payload = base;
+      // Corregido: El endpoint para actualizar una práctica
+      endpoint = `/actividad/practica/${editId}`;
+    } else { // examen
+      payload = {
+        ...base,
+        modo: modo || null,
+        tiempo_limite: String(tiempoLimite).trim() ? Number(tiempoLimite) : null,
+        aleatorizar_preguntas: Boolean(aleatorizarPreguntas),
+        aleatorizar_opciones: Boolean(aleatorizarOpciones),
+        estado: true,
+      };
+      endpoint = `/actividad-examenes/${editId}`;
+    }
+
+    // Usamos PUT para actualizar
+    const res = await api.put(endpoint, payload, { validateStatus: () => true });
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(res.data?.message || res.data?.error || `HTTP ${res.status}`);
+    }
+    
+    const j = res.data || {};
+    // El ID de la actividad actualizada es el mismo `editId`
+    const actividadId = j?.actividad?.id || j?.id || j?.data?.id || editId;
+    if (!actividadId) throw new Error("No se pudo obtener el ID de la actividad actualizada.");
+    
+    return Number(actividadId);
+  };
+
   // ---------- API: vincular preguntas (dedupe + tolerar duplicados del back) ----------
   const attachSeleccion = async (actividadId) => {
     const cant = Number(maxReactivos) || 0;
@@ -309,8 +403,14 @@ export default function CrearActividad() {
       setSaving(true);
       // guardamos por si algo recarga
       persistirFormulario();
+      
+      let actividadId;
+      if (isEdit) {
+        actividadId = await updateActividad();
+      } else {
+        actividadId = await createActividad();
+      }
 
-      const actividadId = await createActividad();
       await attachSeleccion(actividadId);
 
       // Limpiar persistencia solo al éxito
@@ -318,11 +418,11 @@ export default function CrearActividad() {
 
       setMsg({
         ok: true,
-        text:
-          `✅ ${tipo === "examen" ? "Examen" : "Actividad práctica"} creado` +
-          (seleccion.length ? " y preguntas vinculadas." : "."),
+        text: `✅ ${tipo === "examen" ? "Examen" : "Actividad práctica"} ${isEdit ? 'actualizado' : 'creado'} correctamente.`
       });
-      setTimeout(() => navigate("/docente/dashboard"), 800);
+
+      // Redirigir a la lista de actividades
+      setTimeout(() => navigate("/docente/actividades"), 800);
     } catch (err) {
       setMsg({ ok: false, text: err?.message || "Error al crear la actividad." });
     } finally {
@@ -349,7 +449,7 @@ export default function CrearActividad() {
   return (
     <div className="max-w-5xl mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">
-        Crear {tipo === "examen" ? "Examen" : "Actividad Práctica"}
+        {isEdit ? 'Editar' : 'Crear'} {tipo === "examen" ? "Examen" : "Actividad Práctica"}
       </h1>
 
       <form onSubmit={guardar} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
@@ -361,6 +461,7 @@ export default function CrearActividad() {
               <select
                 value={tipo}
                 onChange={(e) => setTipo(e.target.value)}
+                disabled={isEdit}
                 className="w-full h-10 border border-gray-300 rounded-xl px-3 focus:ring-2 focus:ring-purple-600"
               >
                 <option value="practica">Práctica</option>
@@ -557,18 +658,18 @@ export default function CrearActividad() {
             type="button"
             onClick={() => {
               limpiarPersistencia();
-              navigate("/docente/dashboard");
+              navigate("/docente/actividades");
             }}
             className="h-10 px-5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Cancelar
           </button>
           <button
-            type="submit"
+            type="submit" // El botón ya es de tipo submit
             disabled={saving}
             className="h-10 px-6 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
           >
-            {saving ? "Creando..." : `Crear ${tipo === "examen" ? "Examen" : "Práctica"}`}
+            {saving ? (isEdit ? "Actualizando..." : "Creando...") : (isEdit ? `Actualizar ${tipo}` : `Crear ${tipo}`)}
           </button>
         </div>
 
