@@ -2,8 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
-import api from "../../api/axiosClient";
-import { ClipboardList, BookOpen, Tag, Edit, Trash2, Eye } from "lucide-react";
+import api from "../../api/axiosClient";import { ClipboardList, BookOpen, Tag, Edit, Eye, BarChart3, Clock, BrainCircuit, CheckSquare, ChevronDown } from "lucide-react";
 
 export default function VistaPreviaActividades() {
   const navigate = useNavigate();
@@ -13,6 +12,7 @@ export default function VistaPreviaActividades() {
   const [actividades, setActividades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null); // Para expandir resumen
   const [docenteId, setDocenteId] = useState(null);
 
   // ===== Filtros =====
@@ -120,6 +120,11 @@ export default function VistaPreviaActividades() {
     }
   };
 
+  // ===== Manejador de expandir/colapsar resumen =====
+  const toggleResumen = (id) => {
+    setExpandedId(prev => (prev === id ? null : id));
+  };
+
   // ===== Renderizado =====
   if (loading) return <p className="text-gray-500">Cargando actividades...</p>;
   if (error) return <p className="text-red-500">Error: {error}</p>;
@@ -165,9 +170,9 @@ export default function VistaPreviaActividades() {
           actividadesFiltradas.map((act) => (
             <article
               key={`${act.tipo_actividad}-${act.id}`}
-              className="bg-white border border-gray-200 rounded-xl shadow-sm p-5"
+              className="bg-white border border-gray-200 rounded-xl shadow-sm"
             >
-              <div className="flex flex-col sm:flex-row sm:justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-4 p-5">
                 {/* Info Principal */}
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
@@ -198,16 +203,26 @@ export default function VistaPreviaActividades() {
 
                 {/* Acciones */}
                 <div className="flex items-center gap-2 shrink-0">
+                  {act.tipo_actividad === "Examen" && (
+                    <button
+                      onClick={() => toggleResumen(act.id)}
+                      className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
+                      title="Ver resumen de distribución"
+                    >
+                      <BarChart3 className="w-4 h-4" /> Resumen
+                      <ChevronDown className={`w-4 h-4 transition-transform ${expandedId === act.id ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
                   <button
-  onClick={() =>
-    navigate(
-      `/docente/visualizar/${act.tipo_actividad === "Examen" ? "examen" : "practica"}/${act.id}`
-    )
-  }
-  className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
->
-  <Eye className="w-4 h-4" /> Visualizar
-</button>
+                    onClick={() =>
+                      navigate(
+                        `/docente/visualizar/${act.tipo_actividad === "Examen" ? "examen" : "practica"}/${act.id}`
+                      )
+                    }
+                    className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
+                  >
+                    <Eye className="w-4 h-4" /> Visualizar
+                  </button>
 
                   <button
                     onClick={() =>
@@ -219,6 +234,10 @@ export default function VistaPreviaActividades() {
                   </button>
                 </div>
               </div>
+              {/* Panel de Resumen (expandible) */}
+              {expandedId === act.id && act.tipo_actividad === "Examen" && (
+                <ResumenExamen actividad={act} />
+              )}
             </article>
           ))
         ) : (
@@ -227,6 +246,90 @@ export default function VistaPreviaActividades() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Panel de Resumen de Distribución para un Examen.
+ */
+function ResumenExamen({ actividad }) {
+  const resumen = useMemo(() => {
+    const preguntas = actividad.preguntas || [];
+    const totalEjercicios = actividad.cantidad_reactivos || 0;
+    const tiempoEstimado = actividad.tiempo_limite || 0;
+
+    // Asumimos que cada pregunta tiene el mismo peso para sumar 100%.
+    const ponderacionPorPregunta = totalEjercicios > 0 ? 100 / totalEjercicios : 0;
+    const sumaPonderaciones = totalEjercicios > 0 ? 100 : 0;
+
+    const distribucionTipo = preguntas.reduce((acc, p) => {
+      const tipo = p.tipo_pregunta?.tipo || "Desconocido";
+      acc[tipo] = (acc[tipo] || 0) + 1;
+      return acc;
+    }, {});
+
+    const distribucionBloom = preguntas.reduce((acc, p) => {
+      const nivel = p.nivel_bloom?.nombre || "No asignado";
+      acc[nivel] = (acc[nivel] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      totalEjercicios,
+      sumaPonderaciones,
+      tiempoEstimado,
+      distribucionTipo,
+      distribucionBloom,
+      ponderacionPorPregunta,
+    };
+  }, [actividad]);
+
+  return (
+    <div className="bg-gray-50 border-t border-gray-200 p-5 animate-fade-in-down">
+      <h3 className="text-base font-semibold text-gray-800 mb-4">Resumen de Distribución del Examen</h3>
+      
+      {/* Métricas Generales */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
+        <div className="bg-white p-3 rounded-lg border">
+          <dt className="text-xs text-gray-500">Total de Ejercicios</dt>
+          <dd className="text-xl font-bold text-purple-700 flex items-center justify-center gap-2"><CheckSquare className="w-5 h-5" /> {resumen.totalEjercicios}</dd>
+        </div>
+        <div className="bg-white p-3 rounded-lg border">
+          <dt className="text-xs text-gray-500">Suma Ponderaciones</dt>
+          <dd className="text-xl font-bold text-purple-700">{resumen.sumaPonderaciones}%</dd>
+        </div>
+        <div className="bg-white p-3 rounded-lg border">
+          <dt className="text-xs text-gray-500">Tiempo Estimado</dt>
+          <dd className="text-xl font-bold text-purple-700 flex items-center justify-center gap-2"><Clock className="w-5 h-5" /> {resumen.tiempoEstimado} min</dd>
+        </div>
+        <div className="bg-white p-3 rounded-lg border">
+          <dt className="text-xs text-gray-500">Ponderación / Pregunta</dt>
+          <dd className="text-xl font-bold text-purple-700">{resumen.ponderacionPorPregunta.toFixed(1)}%</dd>
+        </div>
+      </div>
+
+      {/* Distribuciones */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Por Tipo de Pregunta */}
+        <div>
+          <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2"><BarChart3 className="w-4 h-4" /> Distribución por Tipo</h4>
+          <ul className="space-y-1 text-sm">
+            {Object.entries(resumen.distribucionTipo).map(([tipo, count]) => (
+              <li key={tipo} className="flex justify-between items-center bg-white p-2 rounded-md border"><span>{tipo}</span> <span className="font-semibold">{count}</span></li>
+            ))}
+          </ul>
+        </div>
+        {/* Por Nivel de Bloom */}
+        <div>
+          <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2"><BrainCircuit className="w-4 h-4" /> Distribución por Nivel Bloom</h4>
+          <ul className="space-y-1 text-sm">
+            {Object.entries(resumen.distribucionBloom).map(([nivel, count]) => (
+              <li key={nivel} className="flex justify-between items-center bg-white p-2 rounded-md border"><span>{nivel}</span> <span className="font-semibold">{count}</span></li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }
