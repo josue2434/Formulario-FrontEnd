@@ -4,6 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import api from "../../api/axiosClient";
 
+// 👇 NUEVO: imports para markdown + LaTeX
+import MarkdownPreview from "@uiw/react-markdown-preview";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import remarkGfm from "remark-gfm";
+import "katex/dist/katex.min.css";
+
 export default function BancoPreguntas() {
   const navigate = useNavigate();
   const { usuario } = useAuth();
@@ -58,7 +65,7 @@ export default function BancoPreguntas() {
   const isArchived = (p) => Number(p?.estado ?? 1) === 0;
   const isRemoved = (p) => isArchived(p); // sólo manejamos archivado por estado
 
-  // —— Payload completo para evitar 422 en PUT ——
+  // —— Payload completo para evitar 422 en PUT —— 
   const buildUpdatePayload = (p, overrides = {}) => ({
     texto_pregunta: p?.texto_pregunta ?? "",
     explicacion: p?.explicacion ?? "",
@@ -472,9 +479,16 @@ export default function BancoPreguntas() {
                   <div key={p.id} className="p-4 border rounded-lg bg-gray-50 hover:shadow-sm transition-shadow">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h3 className="font-semibold text-gray-800 mb-1">
-                          {p.texto_pregunta || "Sin texto"}
-                        </h3>
+                        {/* 👇 AQUÍ se renderiza LaTeX */}
+                        <div className="font-semibold text-gray-800 mb-1">
+                          <MarkdownPreview
+                            source={p.texto_pregunta || "Sin texto"}
+                            wrapperElement={{ "data-color-mode": "light" }}
+                            remarkPlugins={[remarkMath, remarkGfm]}
+                            rehypePlugins={[rehypeKatex]}
+                          />
+                        </div>
+
                         <div className="flex flex-wrap gap-2 text-xs">
                           {getChips(p).map((c, i) => (
                             <span key={i} className={`px-2 py-0.5 rounded-full ${c.cls}`}>{c.text}</span>
