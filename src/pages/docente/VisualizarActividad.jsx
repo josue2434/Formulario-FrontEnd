@@ -32,7 +32,7 @@ const shuffleIfNeeded = (arr, should) => {
   if (!should) return arr;
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor((Math.sin(i * 9301 + 49297) * 233280) % (i + 1));
+    const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -158,6 +158,7 @@ async function fetchActividadYMapeo(tipo, id, headers) {
     aleatorizar_preguntas: false,
     aleatorizar_opciones: false,
     tiempo_limite: null,
+    preguntasPreCargadas: [],
   };
 
   if (tipo === "examen") {
@@ -178,9 +179,12 @@ async function fetchActividadYMapeo(tipo, id, headers) {
 
         const rel = a?.preguntas || a?.data?.preguntas || a?.preguntas_rel || [];
         if (Array.isArray(rel) && rel.length) {
+          // Guardamos preguntas con opciones ya cargadas desde el backend
+          out.preguntasPreCargadas = rel;
+
           out.preguntaIds = rel
             .map((p, idx) => ({
-              id: pickNum(p?.id, p?.id_pregunta),
+              id: pickNum(p?.id_pregunta, p?.pregunta_id, p?.id),
               orden: pickNum(p?.pivot?.orden, p?.orden, idx + 1) || idx + 1,
             }))
             .filter((x) => Number.isFinite(x.id));
@@ -188,6 +192,7 @@ async function fetchActividadYMapeo(tipo, id, headers) {
       }
     }
 
+    // Fallback a tabla pivote si por alguna razón no trae preguntas
     if (!out.preguntaIds.length) {
       let rp = await fetch(
         `${API}/pregunta-actividad-examenes?actividad=${id}`,
@@ -210,7 +215,7 @@ async function fetchActividadYMapeo(tipo, id, headers) {
 
         out.preguntaIds = filtered
           .map((row, idx) => ({
-            id: pickNum(row?.id_pregunta, row?.pregunta_id, row?.id),
+            id: pickNum(row?.id_pregunta, row?.pregunta_id),
             orden: pickNum(row?.orden, row?.pivot?.orden, idx + 1) || idx + 1,
           }))
           .filter((x) => Number.isFinite(x.id));
@@ -237,7 +242,7 @@ async function fetchActividadYMapeo(tipo, id, headers) {
         if (Array.isArray(rel) && rel.length) {
           out.preguntaIds = rel
             .map((p, idx) => ({
-              id: pickNum(p?.id, p?.id_pregunta),
+              id: pickNum(p?.id_pregunta, p?.pregunta_id, p?.id),
               orden: pickNum(p?.pivot?.orden, p?.orden, idx + 1) || idx + 1,
             }))
             .filter((x) => Number.isFinite(x.id));
@@ -267,7 +272,7 @@ async function fetchActividadYMapeo(tipo, id, headers) {
 
         out.preguntaIds = filtered
           .map((row, idx) => ({
-            id: pickNum(row?.id_pregunta, row?.pregunta_id, row?.id),
+            id: pickNum(row?.id_pregunta, row?.pregunta_id),
             orden: pickNum(row?.orden, row?.pivot?.orden, idx + 1) || idx + 1,
           }))
           .filter((x) => Number.isFinite(x.id));
@@ -367,6 +372,62 @@ export default function VisualizarActividad() {
       try {
         const meta = await fetchActividadYMapeo(tipo, id, headers);
 
+        // 🔥 Camino rápido: si el backend YA mandó preguntas con opciones (examen)
+        if (
+          Array.isArray(meta.preguntasPreCargadas) &&
+          meta.preguntasPreCargadas.length
+        ) {
+          let ordered = meta.preguntasPreCargadas.map((p, idx) => {
+            const baseOps = Array.isArray(p.opciones) ? p.opciones : [];
+            const opciones = baseOps.map((op, j) => ({
+              id: pickNum(op.id, op.opcion_id) ?? `${p.id}-op-${j}`,
+              id_pregunta: pickNum(op.id_pregunta, op.pregunta_id, p.id),
+              texto_opcion: op.texto_opcion ?? op.texto ?? "",
+              es_correcta: op.es_correcta == 1 || op.es_correcta === true,
+            }));
+
+            return {
+              ...p,
+              id: pickNum(p.id, p.pregunta_id, p.id_pregunta),
+              texto: decodeHtml(
+                p.texto_pregunta ?? p.texto ?? p.enunciado ?? p.contenido ?? ""
+              ),
+              orden: pickNum(p.orden, idx + 1),
+              opciones,
+            };
+          });
+
+          ordered = ordered
+            .filter(
+              (q) => Array.isArray(q.opciones) && q.opciones.length > 0
+            )
+            .sort(
+              (a, b) =>
+                (pickNum(a.orden, 9999) ?? 9999) -
+                (pickNum(b.orden, 9999) ?? 9999)
+            );
+
+          ordered = shuffleIfNeeded(ordered, meta.aleatorizar_preguntas);
+          ordered = ordered.map((q) => ({
+            ...q,
+            opciones: shuffleIfNeeded(
+              q.opciones,
+              meta.aleatorizar_opciones
+            ),
+          }));
+
+          if (!cancel) {
+            setActividad(meta.actividad);
+            setPreguntas(ordered);
+            const tl = pickNum(meta.tiempo_limite);
+            setSecondsLeft(
+              Number.isFinite(tl) && tl > 0 ? tl * 60 : null
+            );
+          }
+          return;
+        }
+
+        // Si no hay preguntas pre-cargadas (p.ej. práctica), usamos el camino normal
         if (!meta?.preguntaIds?.length) {
           if (!cancel) {
             setActividad(meta.actividad);
@@ -402,8 +463,10 @@ export default function VisualizarActividad() {
                 })
             : [];
 
+        // Aleatorizar orden de preguntas
         ordered = shuffleIfNeeded(ordered, meta.aleatorizar_preguntas);
 
+        // Aleatorizar opciones
         ordered = ordered.map((q) => {
           if (!q) return null;
           const ops = Array.isArray(q?.opciones) ? q.opciones : [];
@@ -419,13 +482,6 @@ export default function VisualizarActividad() {
         });
 
         ordered = ordered.filter(Boolean);
-
-        console.debug("VisualizarActividad: tipo =", tipo, "id =", id);
-        console.debug("VisualizarActividad: meta.preguntaIds =", meta.preguntaIds);
-        console.debug(
-          "VisualizarActividad: ordered IDs (después de fetch) =",
-          ordered.map((q) => q.id)
-        );
 
         if (!cancel) {
           setActividad(meta.actividad);
@@ -448,10 +504,9 @@ export default function VisualizarActividad() {
     };
   }, [tipo, id, headers]);
 
-  // Preguntas visibles: EXACTAMENTE las cargadas, solo filtrando las que tengan opciones
+  // Preguntas visibles: solo las que tienen opciones (para omitir abiertas)
   const visibles = useMemo(() => {
     const base = Array.isArray(preguntas) ? preguntas.filter(Boolean) : [];
-    // evitamos preguntas abiertas sin opciones
     return base.filter(
       (q) => Array.isArray(q?.opciones) && q.opciones.length > 0
     );
@@ -557,7 +612,9 @@ export default function VisualizarActividad() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         {visibles.length === 0 ? (
           <div className="text-gray-600">
-            No hay preguntas de opción múltiple para mostrar.
+            No hay preguntas con opciones (opción múltiple o Verdadero/Falso)
+            para mostrar. Las preguntas abiertas sin opciones se omiten en esta
+            vista.
           </div>
         ) : (
           <ol className="space-y-6" data-color-mode="light">
@@ -644,6 +701,7 @@ export default function VisualizarActividad() {
                                     disabled={disabled}
                                     onChange={() => onSelect(q.id, op.id)}
                                   />
+                                  {/* Opción con Markdown + LaTeX */}
                                   <div className="flex-1 text-sm text-gray-800">
                                     <MarkdownPreview
                                       source={op.texto_opcion || ""}
