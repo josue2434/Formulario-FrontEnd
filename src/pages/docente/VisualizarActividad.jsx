@@ -19,7 +19,6 @@ const safeJson = async (res) => {
     return null;
   }
 };
-
 const pickNum = (...vals) => {
   for (const v of vals) {
     const n = Number(v);
@@ -27,7 +26,6 @@ const pickNum = (...vals) => {
   }
   return null;
 };
-
 const shuffleIfNeeded = (arr, should) => {
   if (!should) return arr;
   const a = [...arr];
@@ -37,7 +35,6 @@ const shuffleIfNeeded = (arr, should) => {
   }
   return a;
 };
-
 const uniqueBy = (arr, keyFn) => {
   const seen = new Set();
   const out = [];
@@ -50,7 +47,6 @@ const uniqueBy = (arr, keyFn) => {
   }
   return out;
 };
-
 const decodeHtml = (str) => {
   try {
     const txt = document.createElement("textarea");
@@ -63,6 +59,7 @@ const decodeHtml = (str) => {
 
 /* ===== Helpers de evaluación y Bloom ===== */
 const getRetroMode = (actividad) => {
+  // soporta: 'oculto' | 'inmediata' | 'al_final'
   return (
     actividad?.retroalimentacion ??
     actividad?.config?.retroalimentacion ??
@@ -71,6 +68,7 @@ const getRetroMode = (actividad) => {
 };
 
 const getBloomLabel = (q) => {
+  // Busca campos comunes
   const raw =
     q?.nivel_bloom?.nombre ??
     q?.nivel_bloom ??
@@ -85,26 +83,18 @@ const getBloomLabel = (q) => {
   return String(raw).trim() || "Sin nivel";
 };
 
-const gradeAttempt = (preguntas = [], respuestas = {}) => {
-  const arr = Array.isArray(preguntas) ? preguntas.filter(Boolean) : [];
-
+const gradeAttempt = (preguntas, respuestas) => {
   let correctas = 0;
   let incorrectas = 0;
   let omitidas = 0;
 
   const detalle = [];
 
-  for (const q of arr) {
-    if (!q) {
-      omitidas++;
-      continue;
-    }
-
+  for (const q of preguntas) {
     const sel = respuestas[q.id];
-    const opciones = Array.isArray(q?.opciones) ? q.opciones : [];
-    const correcta = opciones.find((o) => o?.es_correcta);
-    const esCorrecta =
-      sel != null && correcta && String(sel) === String(correcta.id);
+    const opciones = Array.isArray(q.opciones) ? q.opciones : [];
+    const correcta = opciones.find((o) => o.es_correcta);
+    const esCorrecta = sel != null && correcta && String(sel) === String(correcta.id);
 
     if (sel == null) {
       omitidas++;
@@ -127,20 +117,14 @@ const gradeAttempt = (preguntas = [], respuestas = {}) => {
     });
   }
 
-  const total = arr.length;
+  const total = preguntas.length;
   const puntaje = total > 0 ? Math.round((correctas / total) * 100) : 0;
 
+  // Estadísticas por nivel Bloom
   const porBloom = {};
   for (const d of detalle) {
     const key = d.bloom || "Sin nivel";
-    if (!porBloom[key]) {
-      porBloom[key] = {
-        total: 0,
-        correctas: 0,
-        incorrectas: 0,
-        omitidas: 0,
-      };
-    }
+    if (!porBloom[key]) porBloom[key] = { total: 0, correctas: 0, incorrectas: 0, omitidas: 0 };
     porBloom[key].total++;
     if (d.seleccion == null) porBloom[key].omitidas++;
     else if (d.esCorrecta) porBloom[key].correctas++;
@@ -151,6 +135,7 @@ const gradeAttempt = (preguntas = [], respuestas = {}) => {
 };
 
 /* ==================== Fetch helpers ==================== */
+/** Devuelve { actividad, preguntaIds: [{id,orden}], aleatorizar_preguntas, aleatorizar_opciones, tiempo_limite } */
 async function fetchActividadYMapeo(tipo, id, headers) {
   const out = {
     actividad: null,
@@ -165,15 +150,10 @@ async function fetchActividadYMapeo(tipo, id, headers) {
     if (r.ok) {
       const j = await safeJson(r);
       const a = j?.actividad || j?.data || j || null;
-
       if (a) {
         out.actividad = a;
-        out.aleatorizar_preguntas = !!(
-          a?.aleatorizar_preguntas ?? a?.config?.aleatorizar_preguntas
-        );
-        out.aleatorizar_opciones = !!(
-          a?.aleatorizar_opciones ?? a?.config?.aleatorizar_opciones
-        );
+        out.aleatorizar_preguntas = !!(a?.aleatorizar_preguntas ?? a?.config?.aleatorizar_preguntas);
+        out.aleatorizar_opciones = !!(a?.aleatorizar_opciones ?? a?.config?.aleatorizar_opciones);
         out.tiempo_limite = pickNum(a?.tiempo_limite, a?.config?.tiempo_limite);
 
         const rel = a?.preguntas || a?.data?.preguntas || a?.preguntas_rel || [];
@@ -189,12 +169,8 @@ async function fetchActividadYMapeo(tipo, id, headers) {
     }
 
     if (!out.preguntaIds.length) {
-      let rp = await fetch(
-        `${API}/pregunta-actividad-examenes?actividad=${id}`,
-        { headers }
-      );
+      let rp = await fetch(`${API}/pregunta-actividad-examenes?actividad=${id}`, { headers });
       if (!rp.ok) rp = await fetch(`${API}/pregunta-actividad-examenes`, { headers });
-
       if (rp.ok) {
         const jj = await safeJson(rp);
         const list = Array.isArray(jj) ? jj : jj?.data || jj?.preguntas || [];
@@ -207,7 +183,6 @@ async function fetchActividadYMapeo(tipo, id, headers) {
           );
           return Number(aid) === Number(id);
         });
-
         out.preguntaIds = filtered
           .map((row, idx) => ({
             id: pickNum(row?.id_pregunta, row?.pregunta_id, row?.id),
@@ -217,20 +192,14 @@ async function fetchActividadYMapeo(tipo, id, headers) {
       }
     }
   } else {
-    // PRACTICA
     const r = await fetch(`${API}/actividad/practica/${id}`, { headers });
     if (r.ok) {
       const j = await safeJson(r);
       const a = j?.actividad || j?.data || j || null;
-
       if (a) {
         out.actividad = a;
-        out.aleatorizar_preguntas = !!(
-          a?.aleatorizar_preguntas ?? a?.config?.aleatorizar_preguntas
-        );
-        out.aleatorizar_opciones = !!(
-          a?.aleatorizar_opciones ?? a?.config?.aleatorizar_opciones
-        );
+        out.aleatorizar_preguntas = !!(a?.aleatorizar_preguntas ?? a?.config?.aleatorizar_preguntas);
+        out.aleatorizar_opciones = !!(a?.aleatorizar_opciones ?? a?.config?.aleatorizar_opciones);
         out.tiempo_limite = pickNum(a?.tiempo_limite, a?.config?.tiempo_limite);
 
         const rel = a?.preguntas || a?.data?.preguntas || a?.preguntas_rel || [];
@@ -246,12 +215,8 @@ async function fetchActividadYMapeo(tipo, id, headers) {
     }
 
     if (!out.preguntaIds.length) {
-      let rp = await fetch(
-        `${API}/preguntas/actividad-practica?actividad=${id}`,
-        { headers }
-      );
+      let rp = await fetch(`${API}/preguntas/actividad-practica?actividad=${id}`, { headers });
       if (!rp.ok) rp = await fetch(`${API}/preguntas/actividad-practica`, { headers });
-
       if (rp.ok) {
         const jj = await safeJson(rp);
         const list = Array.isArray(jj) ? jj : jj?.data || jj?.preguntas || [];
@@ -264,7 +229,6 @@ async function fetchActividadYMapeo(tipo, id, headers) {
           );
           return Number(aid) === Number(id);
         });
-
         out.preguntaIds = filtered
           .map((row, idx) => ({
             id: pickNum(row?.id_pregunta, row?.pregunta_id, row?.id),
@@ -278,7 +242,6 @@ async function fetchActividadYMapeo(tipo, id, headers) {
   out.preguntaIds = uniqueBy(out.preguntaIds, (x) => x.id).sort(
     (a, b) => (a.orden || 0) - (b.orden || 0)
   );
-
   return out;
 }
 
@@ -286,7 +249,6 @@ async function fetchActividadYMapeo(tipo, id, headers) {
 async function fetchPreguntaConOpciones(pid, headers) {
   const rp = await fetch(`${API}/preguntas/${pid}`, { headers });
   if (!rp.ok) return null;
-
   const j = await safeJson(rp);
   const p = j?.pregunta || j?.data?.pregunta || j?.data || j || null;
   if (!p) return null;
@@ -296,9 +258,7 @@ async function fetchPreguntaConOpciones(pid, headers) {
   );
 
   try {
-    let ro = await fetch(`${API}/opcion-respuestas?pregunta=${pid}`, {
-      headers,
-    });
+    let ro = await fetch(`${API}/opcion-respuestas?pregunta=${pid}`, { headers });
     if (!ro.ok) ro = await fetch(`${API}/preguntas/${pid}/opciones`, { headers });
     if (!ro.ok) ro = await fetch(`${API}/opcion-respuestas`, { headers });
 
@@ -325,8 +285,6 @@ async function fetchPreguntaConOpciones(pid, headers) {
     p.opciones = [];
   }
 
-  if (!Array.isArray(p.opciones)) p.opciones = [];
-
   return p;
 }
 
@@ -346,12 +304,16 @@ export default function VisualizarActividad() {
   const [preguntas, setPreguntas] = useState([]);
   const [error, setError] = useState(null);
 
+  // Timer
   const [secondsLeft, setSecondsLeft] = useState(null);
   const timerRef = useRef(null);
 
+  // Respuestas seleccionadas: { [idPregunta]: idOpcion }
   const [respuestas, setRespuestas] = useState({});
+
+  // Estado de evaluación
   const [graded, setGraded] = useState(false);
-  const [resultado, setResultado] = useState(null);
+  const [resultado, setResultado] = useState(null); // { puntaje, total, correctas, incorrectas, omitidas, detalle, porBloom }
 
   // Cargar actividad + preguntas exactas
   useEffect(() => {
@@ -363,23 +325,21 @@ export default function VisualizarActividad() {
       setGraded(false);
       setResultado(null);
       setRespuestas({});
-
       try {
         const meta = await fetchActividadYMapeo(tipo, id, headers);
 
+        // Sin mapeo: dejar en 0 preguntas pero respetar timer
         if (!meta?.preguntaIds?.length) {
-          if (!cancel) {
-            setActividad(meta.actividad);
-            setPreguntas([]);
-            const tl = pickNum(meta.tiempo_limite);
-            if (Number.isFinite(tl) && tl > 0) setSecondsLeft(tl * 60);
-          }
+          setActividad(meta.actividad);
+          setPreguntas([]);
+          const tl = pickNum(meta.tiempo_limite);
+          if (Number.isFinite(tl) && tl > 0) setSecondsLeft(tl * 60);
           return;
         }
 
+        // Cargar preguntas con opciones
         const loaded = [];
         for (const row of meta.preguntaIds) {
-          if (!row || !Number.isFinite(row.id)) continue;
           const p = await fetchPreguntaConOpciones(row.id, headers);
           if (p) {
             loaded.push({
@@ -390,35 +350,26 @@ export default function VisualizarActividad() {
           }
         }
 
-        let ordered =
-          Array.isArray(loaded) && loaded.length
-            ? loaded
-                .filter((q) => q && Number.isFinite(q.id))
-                .sort((a, b) => {
-                  const oa = pickNum(a.orden, a?.pivot?.orden, 9999);
-                  const ob = pickNum(b.orden, b?.pivot?.orden, 9999);
-                  if (oa !== ob) return oa - ob;
-                  return a.id - b.id;
-                })
-            : [];
+        // Orden + aleatorizar
+        let ordered = loaded
+          .filter((x) => Number.isFinite(x.id))
+          .sort((a, b) => {
+            const oa = pickNum(a.orden, a?.pivot?.orden, 9999);
+            const ob = pickNum(b.orden, b?.pivot?.orden, 9999);
+            if (oa !== ob) return oa - ob;
+            return a.id - b.id;
+          });
 
         ordered = shuffleIfNeeded(ordered, meta.aleatorizar_preguntas);
-
         ordered = ordered.map((q) => {
-          if (!q) return null;
-          const ops = Array.isArray(q?.opciones) ? q.opciones : [];
+          const ops = Array.isArray(q.opciones) ? q.opciones : [];
           const cleanOps = uniqueBy(
             ops.filter((op) => Number(op?.id_pregunta) === Number(q.id)),
-            (op) => op?.id ?? `${q.id}-${op?.texto_opcion}`
+            (op) => op.id ?? `${q.id}-${op.texto_opcion}`
           );
-          const finalOps = shuffleIfNeeded(
-            cleanOps.filter(Boolean),
-            meta.aleatorizar_opciones
-          );
+          const finalOps = shuffleIfNeeded(cleanOps, meta.aleatorizar_opciones);
           return { ...q, opciones: finalOps };
         });
-
-        ordered = ordered.filter(Boolean);
 
         if (!cancel) {
           setActividad(meta.actividad);
@@ -427,8 +378,7 @@ export default function VisualizarActividad() {
           setSecondsLeft(Number.isFinite(tl) && tl > 0 ? tl * 60 : null);
         }
       } catch (e) {
-        if (!cancel)
-          setError(e?.message || "Error al cargar la actividad");
+        if (!cancel) setError(e?.message || "Error al cargar la actividad");
       } finally {
         if (!cancel) setLoading(false);
       }
@@ -437,18 +387,8 @@ export default function VisualizarActividad() {
     load();
     return () => {
       cancel = true;
-      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [tipo, id, headers]);
-
-  // Preguntas visibles (ignora primera y sin opciones)
-  const visibles = useMemo(() => {
-    const base = Array.isArray(preguntas) ? preguntas.filter(Boolean) : [];
-    const sinPrimera = base.slice(1);
-    return sinPrimera.filter(
-      (q) => Array.isArray(q?.opciones) && q.opciones.length > 0
-    );
-  }, [preguntas]);
 
   // Countdown
   useEffect(() => {
@@ -460,6 +400,7 @@ export default function VisualizarActividad() {
         if (s === null) return null;
         if (s <= 1) {
           clearInterval(timerRef.current);
+          // Auto-califica cuando se acaba el tiempo (si no se calificó)
           if (!graded) {
             const res = gradeAttempt(visibles, respuestas);
             setResultado(res);
@@ -471,10 +412,8 @@ export default function VisualizarActividad() {
       });
     }, 1000);
 
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [secondsLeft, graded, visibles, respuestas]);
+    return () => clearInterval(timerRef.current);
+  }, [secondsLeft, graded]); // ojo: dependencias
 
   const mmss = useMemo(() => {
     if (!Number.isFinite(secondsLeft)) return null;
@@ -483,13 +422,22 @@ export default function VisualizarActividad() {
     return `${mm}:${ss}`;
   }, [secondsLeft]);
 
+  // Derivar preguntas visibles:
+  // 1) Ignorar la primera
+  // 2) Filtrar “abiertas” (sin opciones)
+  const visibles = useMemo(() => {
+    const sinPrimera = preguntas.slice(1);
+    return sinPrimera.filter((q) => Array.isArray(q.opciones) && q.opciones.length > 0);
+  }, [preguntas]);
+
   const onSelect = (idPregunta, idOpcion) => {
-    if (secondsLeft === 0 || graded) return;
+    if (secondsLeft === 0 || graded) return; // bloqueado si ya terminó el tiempo o ya se calificó
     setRespuestas((prev) => ({ ...prev, [idPregunta]: idOpcion }));
   };
 
-  const retroMode = getRetroMode(actividad);
+  const retroMode = getRetroMode(actividad); // 'oculto' | 'inmediata' | 'al_final'
   const puedeMostrarFeedback = (fase) => {
+    // fase: 'durante' o 'final'
     if (retroMode === "oculto") return false;
     if (retroMode === "inmediata") return true;
     if (retroMode === "al_final") return fase === "final";
@@ -500,9 +448,7 @@ export default function VisualizarActividad() {
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto">
-        <div className="animate-pulse p-6 bg-white border rounded-2xl">
-          Cargando…
-        </div>
+        <div className="animate-pulse p-6 bg-white border rounded-2xl">Cargando…</div>
       </div>
     );
   }
@@ -539,9 +485,7 @@ export default function VisualizarActividad() {
                 : "bg-gray-100 border-gray-200 text-gray-700"
             }`}
           >
-            {secondsLeft > 0 && !graded
-              ? `Tiempo restante: ${mmss}`
-              : "Tiempo detenido"}
+            {secondsLeft > 0 && !graded ? `Tiempo restante: ${mmss}` : "Tiempo detenido"}
           </div>
         )}
       </div>
@@ -550,44 +494,28 @@ export default function VisualizarActividad() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         {visibles.length === 0 ? (
           <div className="text-gray-600">
-            No hay preguntas de opción múltiple para mostrar (la primera se
-            omite).
+            No hay preguntas de opción múltiple para mostrar (la primera se omite).
           </div>
         ) : (
           <ol className="space-y-6" data-color-mode="light">
             {visibles.map((q, idx) => {
-              if (!q) return null;
               const seleccion = respuestas[q.id];
-              let estado = null;
-
+              // Si retro inmediata y aún no califica, pinta correcto/incorrecto al seleccionar
+              let estado = null; // 'ok' | 'bad' | null
               if (puedeMostrarFeedback("durante") && seleccion != null) {
-                const correcta = Array.isArray(q?.opciones)
-                  ? q.opciones.find((o) => o?.es_correcta)
-                  : null;
+                const correcta = q.opciones.find((o) => o.es_correcta);
                 if (correcta) {
-                  estado =
-                    String(seleccion) === String(correcta.id) ? "ok" : "bad";
+                  estado = String(seleccion) === String(correcta.id) ? "ok" : "bad";
                 }
               }
-
               return (
                 <li key={`q-${q.id}-${idx}`} className="border rounded-2xl p-4">
                   <div className="flex items-start gap-3">
-                    <div
-                      className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold
-                     ${
-                       estado === "ok"
-                         ? "bg-emerald-100 text-emerald-700"
-                         : estado === "bad"
-                         ? "bg-rose-100 text-rose-700"
-                         : "bg-purple-100 text-purple-700"
-                     }`}
-                    >
+                    <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold
+                     ${estado === "ok" ? "bg-emerald-100 text-emerald-700" : estado === "bad" ? "bg-rose-100 text-rose-700" : "bg-purple-100 text-purple-700"}`}>
                       {idx + 1}
                     </div>
-
                     <div className="flex-1 prose prose-slate max-w-none prose-p:leading-relaxed">
-                      {/* Enunciado con LaTeX */}
                       <MarkdownPreview
                         source={q.texto || ""}
                         remarkPlugins={[remarkGfm, remarkMath]}
@@ -598,100 +526,69 @@ export default function VisualizarActividad() {
                         ]}
                       />
 
-                      {/* Opciones */}
+                      {/* Opciones (seleccionables) */}
                       <ul className="mt-4 space-y-2">
-                        {(Array.isArray(q?.opciones) ? q.opciones : []).map(
-                          (op, i) => {
-                            if (!op) return null;
-                            const checked = respuestas[q.id] === op.id;
-                            const disabled = secondsLeft === 0 || graded;
-                            let postClass = "";
-
-                            if (graded && puedeMostrarFeedback("final")) {
-                              const esSel = checked;
-                              const esOk = op.es_correcta;
-                              if (esOk)
-                                postClass = "border-emerald-400 bg-emerald-50";
-                              if (esSel && !esOk)
-                                postClass = "border-rose-400 bg-rose-50";
-                            }
-
-                            return (
-                              <li key={`op-${op.id ?? `${q.id}-${i}`}`}>
-                                <label
-                                  className={`flex items-center gap-3 border rounded-xl px-4 py-2 cursor-pointer ${
-                                    checked
-                                      ? "border-indigo-400 bg-indigo-50"
-                                      : "border-gray-200 hover:bg-gray-50"
-                                  } ${
-                                    disabled
-                                      ? "opacity-60 cursor-not-allowed"
-                                      : ""
-                                  } ${postClass}`}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`q-${q.id}`}
-                                    value={op.id}
-                                    className="w-4 h-4"
-                                    checked={checked || false}
-                                    disabled={disabled}
-                                    onChange={() => onSelect(q.id, op.id)}
-                                  />
-                                  {/* 👇 Opción renderizada con Markdown + LaTeX */}
-                                  <div className="flex-1 text-sm text-gray-800">
-                                    <MarkdownPreview
-                                      source={op.texto_opcion || ""}
-                                      wrapperElement={{
-                                        "data-color-mode": "light",
-                                      }}
-                                      remarkPlugins={[remarkGfm, remarkMath]}
-                                      rehypePlugins={[rehypeKatex]}
-                                    />
-                                  </div>
-                                </label>
-                              </li>
-                            );
+                        {q.opciones.map((op, i) => {
+                          const checked = respuestas[q.id] === op.id;
+                          const disabled = secondsLeft === 0 || graded;
+                          // Pintado post-calificación (al_final)
+                          let postClass = "";
+                          if (graded && puedeMostrarFeedback("final")) {
+                            const esSel = checked;
+                            const esOk = op.es_correcta;
+                            if (esOk) postClass = "border-emerald-400 bg-emerald-50";
+                            if (esSel && !esOk) postClass = "border-rose-400 bg-rose-50";
                           }
-                        )}
+                          return (
+                            <li key={`op-${op.id ?? `${q.id}-${i}`}`}>
+                              <label
+                                className={`flex items-center gap-3 border rounded-xl px-4 py-2 cursor-pointer ${
+                                  checked
+                                    ? "border-indigo-400 bg-indigo-50"
+                                    : "border-gray-200 hover:bg-gray-50"
+                                } ${disabled ? "opacity-60 cursor-not-allowed" : ""} ${postClass}`}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`q-${q.id}`}
+                                  value={op.id}
+                                  className="w-4 h-4"
+                                  checked={checked || false}
+                                  disabled={disabled}
+                                  onChange={() => onSelect(q.id, op.id)}
+                                />
+                                <span className="text-gray-800">{op.texto_opcion}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
                       </ul>
 
                       {/* Retro inmediata por reactivo */}
-                      {puedeMostrarFeedback("durante") &&
-                        respuestas[q.id] != null &&
-                        !graded && (
-                          <div className="mt-3 text-sm">
-                            {(() => {
-                              const correcta = Array.isArray(q?.opciones)
-                                ? q.opciones.find((o) => o?.es_correcta)
-                                : null;
-                              const esOk =
-                                correcta &&
-                                String(respuestas[q.id]) ===
-                                  String(correcta.id);
-                              return (
-                                <div
-                                  className={`px-3 py-2 rounded-lg inline-flex items-center gap-2 ${
-                                    esOk
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      : "bg-rose-50 text-rose-700 border border-rose-200"
-                                  }`}
-                                >
-                                  {esOk ? "✔ Correcto" : "✘ Incorrecto"}
-                                  {q?.retroalimentacion ||
-                                  q?.explicacion ||
-                                  q?.feedback ? (
-                                    <span className="ml-2 opacity-80">
-                                      {q?.retroalimentacion ??
-                                        q?.explicacion ??
-                                        q?.feedback}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        )}
+                      {puedeMostrarFeedback("durante") && respuestas[q.id] != null && !graded && (
+                        <div className="mt-3 text-sm">
+                          {(() => {
+                            const correcta = q.opciones.find((o) => o.es_correcta);
+                            const esOk = correcta && String(respuestas[q.id]) === String(correcta.id);
+                            return (
+                              <div
+                                className={`px-3 py-2 rounded-lg inline-flex items-center gap-2 ${
+                                  esOk
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                                }`}
+                              >
+                                {esOk ? "✔ Correcto" : "✘ Incorrecto"}
+                                {q?.retroalimentacion || q?.explicacion || q?.feedback ? (
+                                  <span className="ml-2 opacity-80">
+                                    {q?.retroalimentacion ?? q?.explicacion ?? q?.feedback}
+                                  </span>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </li>
@@ -710,9 +607,7 @@ export default function VisualizarActividad() {
             alert("Respuestas guardadas (demo).");
           }}
           className={`h-10 px-6 rounded-xl text-white ${
-            secondsLeft === 0 || graded
-              ? "bg-gray-400"
-              : "bg-emerald-600 hover:bg-emerald-700"
+            secondsLeft === 0 || graded ? "bg-gray-400" : "bg-emerald-600 hover:bg-emerald-700"
           }`}
         >
           Guardar respuestas
@@ -742,21 +637,14 @@ export default function VisualizarActividad() {
         <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6">
           <div className="flex flex-wrap items-center gap-4 justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-800">
-                Resultados simulados
-              </h2>
+              <h2 className="text-xl font-bold text-gray-800">Resultados simulados</h2>
               <p className="text-gray-600">
-                {resultado.correctas} correctas • {resultado.incorrectas}{" "}
-                incorrectas • {resultado.omitidas} sin responder
+                {resultado.correctas} correctas • {resultado.incorrectas} incorrectas • {resultado.omitidas} sin responder
               </p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-extrabold text-indigo-700">
-                {resultado.puntaje}%
-              </div>
-              <div className="text-xs text-gray-500">
-                Puntaje (aciertos / {resultado.total})
-              </div>
+              <div className="text-3xl font-extrabold text-indigo-700">{resultado.puntaje}%</div>
+              <div className="text-xs text-gray-500">Puntaje (aciertos / {resultado.total})</div>
             </div>
           </div>
 
@@ -768,11 +656,7 @@ export default function VisualizarActividad() {
               <div className="h-2 bg-gray-100 rounded mt-2">
                 <div
                   className="h-2 rounded bg-emerald-500"
-                  style={{
-                    width: `${
-                      (resultado.correctas / (resultado.total || 1)) * 100
-                    }%`,
-                  }}
+                  style={{ width: `${(resultado.correctas / (resultado.total || 1)) * 100}%` }}
                 />
               </div>
             </div>
@@ -782,11 +666,7 @@ export default function VisualizarActividad() {
               <div className="h-2 bg-gray-100 rounded mt-2">
                 <div
                   className="h-2 rounded bg-rose-500"
-                  style={{
-                    width: `${
-                      (resultado.incorrectas / (resultado.total || 1)) * 100
-                    }%`,
-                  }}
+                  style={{ width: `${(resultado.incorrectas / (resultado.total || 1)) * 100}%` }}
                 />
               </div>
             </div>
@@ -796,21 +676,15 @@ export default function VisualizarActividad() {
               <div className="h-2 bg-gray-100 rounded mt-2">
                 <div
                   className="h-2 rounded bg-amber-500"
-                  style={{
-                    width: `${
-                      (resultado.omitidas / (resultado.total || 1)) * 100
-                    }%`,
-                  }}
+                  style={{ width: `${(resultado.omitidas / (resultado.total || 1)) * 100}%` }}
                 />
               </div>
             </div>
           </div>
 
-          {/* Tabla Bloom */}
+          {/* Estadísticas por nivel Bloom */}
           <div>
-            <h3 className="font-semibold text-gray-800 mb-2">
-              Desempeño por nivel Bloom
-            </h3>
+            <h3 className="font-semibold text-gray-800 mb-2">Desempeño por nivel Bloom</h3>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -825,29 +699,18 @@ export default function VisualizarActividad() {
                 </thead>
                 <tbody>
                   {Object.entries(resultado.porBloom).map(([nivel, stats]) => {
-                    const pct = stats.total
-                      ? Math.round((stats.correctas / stats.total) * 100)
-                      : 0;
+                    const pct = stats.total ? Math.round((stats.correctas / stats.total) * 100) : 0;
                     return (
                       <tr key={nivel} className="border-b last:border-b-0">
                         <td className="py-2 pr-4 font-medium">{nivel}</td>
-                        <td className="py-2 pr-4 text-emerald-700">
-                          {stats.correctas}
-                        </td>
-                        <td className="py-2 pr-4 text-rose-700">
-                          {stats.incorrectas}
-                        </td>
-                        <td className="py-2 pr-4 text-amber-700">
-                          {stats.omitidas}
-                        </td>
+                        <td className="py-2 pr-4 text-emerald-700">{stats.correctas}</td>
+                        <td className="py-2 pr-4 text-rose-700">{stats.incorrectas}</td>
+                        <td className="py-2 pr-4 text-amber-700">{stats.omitidas}</td>
                         <td className="py-2 pr-4">{stats.total}</td>
                         <td className="py-2 pr-4">
                           <div className="flex items-center gap-2">
                             <div className="w-24 h-2 bg-gray-100 rounded">
-                              <div
-                                className="h-2 bg-emerald-500 rounded"
-                                style={{ width: `${pct}%` }}
-                              />
+                              <div className="h-2 bg-emerald-500 rounded" style={{ width: `${pct}%` }} />
                             </div>
                             <span className="tabular-nums">{pct}%</span>
                           </div>
@@ -857,9 +720,7 @@ export default function VisualizarActividad() {
                   })}
                   {Object.keys(resultado.porBloom).length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-3 text-gray-500">
-                        Sin datos de nivel Bloom.
-                      </td>
+                      <td colSpan={6} className="py-3 text-gray-500">Sin datos de nivel Bloom.</td>
                     </tr>
                   )}
                 </tbody>
@@ -867,29 +728,16 @@ export default function VisualizarActividad() {
             </div>
           </div>
 
-          {/* Detalle por reactivo */}
+          {/* Retroalimentación por reactivo (final) */}
           {puedeMostrarFeedback("final") && (
             <div className="space-y-4">
-              <h3 className="font-semibold text-gray-800">
-                Detalle por reactivo
-              </h3>
+              <h3 className="font-semibold text-gray-800">Detalle por reactivo</h3>
               <ol className="space-y-4">
                 {resultado.detalle.map((d, i) => (
-                  <li
-                    key={`det-${d.id}-${i}`}
-                    className="border rounded-xl p-4"
-                  >
+                  <li key={`det-${d.id}-${i}`} className="border rounded-xl p-4">
                     <div className="flex items-start gap-3">
-                      <div
-                        className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold
-                        ${
-                          d.esCorrecta
-                            ? "bg-emerald-100 text-emerald-700"
-                            : d.seleccion == null
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-rose-100 text-rose-700"
-                        }`}
-                      >
+                      <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold
+                        ${d.esCorrecta ? "bg-emerald-100 text-emerald-700" : d.seleccion == null ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
                         {i + 1}
                       </div>
                       <div className="flex-1">
@@ -897,56 +745,23 @@ export default function VisualizarActividad() {
                           <MarkdownPreview
                             source={d.texto || ""}
                             remarkPlugins={[remarkGfm, remarkMath]}
-                            rehypePlugins={[
-                              [rehypeKatex, { output: "html" }],
-                              rehypeSlug,
-                              [rehypeAutolinkHeadings, { behavior: "wrap" }],
-                            ]}
+                            rehypePlugins={[[rehypeKatex, { output: "html" }], rehypeSlug, [rehypeAutolinkHeadings, { behavior: "wrap" }]]}
                           />
                         </div>
                         <div className="mt-3 text-sm">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="px-2 py-1 rounded bg-gray-100 text-gray-700">
-                              Bloom: {d.bloom}
-                            </span>
-                            <span
-                              className={`px-2 py-1 rounded ${
-                                d.esCorrecta
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                  : d.seleccion == null
-                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                  : "bg-rose-50 text-rose-700 border border-rose-200"
-                              }`}
-                            >
-                              {d.esCorrecta
-                                ? "Correcta"
-                                : d.seleccion == null
-                                ? "Omitida"
-                                : "Incorrecta"}
+                            <span className="px-2 py-1 rounded bg-gray-100 text-gray-700">Bloom: {d.bloom}</span>
+                            <span className={`px-2 py-1 rounded ${d.esCorrecta ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : d.seleccion == null ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
+                              {d.esCorrecta ? "Correcta" : d.seleccion == null ? "Omitida" : "Incorrecta"}
                             </span>
                           </div>
-                          <div className="mt-2 text-gray-700">
-                            <span className="text-gray-600">
-                              Respuesta correcta:{" "}
-                            </span>
-                            {/* 👇 Texto de la respuesta correcta con LaTeX */}
-                            <div className="mt-1">
-                              <MarkdownPreview
-                                source={d.correctaTexto || "(sin texto)"}
-                                wrapperElement={{
-                                  "data-color-mode": "light",
-                                }}
-                                remarkPlugins={[remarkGfm, remarkMath]}
-                                rehypePlugins={[rehypeKatex]}
-                              />
-                            </div>
+                          <div className="mt-2">
+                            <span className="text-gray-600">Respuesta correcta: </span>
+                            <span className="font-medium text-gray-800">{d.correctaTexto || "(sin texto)"}</span>
                           </div>
                           {d.retro ? (
                             <div className="mt-2 text-gray-700">
-                              <span className="text-gray-600">
-                                Retroalimentación:{" "}
-                              </span>
-                              {d.retro}
+                              <span className="text-gray-600">Retroalimentación: </span>{d.retro}
                             </div>
                           ) : null}
                         </div>
