@@ -371,6 +371,15 @@ export default function VisualizarActividad() {
           return { ...q, opciones: finalOps };
         });
 
+        ordered = ordered.filter(Boolean);
+
+        console.debug("VisualizarActividad: tipo =", tipo, "id =", id);
+        console.debug("VisualizarActividad: meta.preguntaIds =", meta.preguntaIds);
+        console.debug(
+          "VisualizarActividad: ordered IDs (después de fetch) =",
+          ordered.map((q) => q.id)
+        );
+
         if (!cancel) {
           setActividad(meta.actividad);
           setPreguntas(ordered);
@@ -389,6 +398,15 @@ export default function VisualizarActividad() {
       cancel = true;
     };
   }, [tipo, id, headers]);
+
+  // Preguntas visibles: EXACTAMENTE las cargadas, solo filtrando las que tengan opciones
+  const visibles = useMemo(() => {
+    const base = Array.isArray(preguntas) ? preguntas.filter(Boolean) : [];
+    // evitamos preguntas abiertas sin opciones
+    return base.filter(
+      (q) => Array.isArray(q?.opciones) && q.opciones.length > 0
+    );
+  }, [preguntas]);
 
   // Countdown
   useEffect(() => {
@@ -494,7 +512,7 @@ export default function VisualizarActividad() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         {visibles.length === 0 ? (
           <div className="text-gray-600">
-            No hay preguntas de opción múltiple para mostrar (la primera se omite).
+            No hay preguntas de opción múltiple para mostrar.
           </div>
         ) : (
           <ol className="space-y-6" data-color-mode="light">
@@ -528,40 +546,59 @@ export default function VisualizarActividad() {
 
                       {/* Opciones (seleccionables) */}
                       <ul className="mt-4 space-y-2">
-                        {q.opciones.map((op, i) => {
-                          const checked = respuestas[q.id] === op.id;
-                          const disabled = secondsLeft === 0 || graded;
-                          // Pintado post-calificación (al_final)
-                          let postClass = "";
-                          if (graded && puedeMostrarFeedback("final")) {
-                            const esSel = checked;
-                            const esOk = op.es_correcta;
-                            if (esOk) postClass = "border-emerald-400 bg-emerald-50";
-                            if (esSel && !esOk) postClass = "border-rose-400 bg-rose-50";
+                        {(Array.isArray(q?.opciones) ? q.opciones : []).map(
+                          (op, i) => {
+                            if (!op) return null;
+                            const checked = respuestas[q.id] === op.id;
+                            const disabled = secondsLeft === 0 || graded;
+                            let postClass = "";
+
+                            if (graded && puedeMostrarFeedback("final")) {
+                              const esSel = checked;
+                              const esOk = op.es_correcta;
+                              if (esOk)
+                                postClass = "border-emerald-400 bg-emerald-50";
+                              if (esSel && !esOk)
+                                postClass = "border-rose-400 bg-rose-50";
+                            }
+
+                            return (
+                              <li key={`op-${op.id ?? `${q.id}-${i}`}`}>
+                                <label
+                                  className={`flex items-center gap-3 border rounded-xl px-4 py-2 cursor-pointer ${
+                                    checked
+                                      ? "border-indigo-400 bg-indigo-50"
+                                      : "border-gray-200 hover:bg-gray-50"
+                                  } ${
+                                    disabled
+                                      ? "opacity-60 cursor-not-allowed"
+                                      : ""
+                                  } ${postClass}`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`q-${q.id}`}
+                                    value={op.id}
+                                    className="w-4 h-4"
+                                    checked={checked || false}
+                                    disabled={disabled}
+                                    onChange={() => onSelect(q.id, op.id)}
+                                  />
+                                  <div className="flex-1 text-sm text-gray-800">
+                                    <MarkdownPreview
+                                      source={op.texto_opcion || ""}
+                                      wrapperElement={{
+                                        "data-color-mode": "light",
+                                      }}
+                                      remarkPlugins={[remarkGfm, remarkMath]}
+                                      rehypePlugins={[rehypeKatex]}
+                                    />
+                                  </div>
+                                </label>
+                              </li>
+                            );
                           }
-                          return (
-                            <li key={`op-${op.id ?? `${q.id}-${i}`}`}>
-                              <label
-                                className={`flex items-center gap-3 border rounded-xl px-4 py-2 cursor-pointer ${
-                                  checked
-                                    ? "border-indigo-400 bg-indigo-50"
-                                    : "border-gray-200 hover:bg-gray-50"
-                                } ${disabled ? "opacity-60 cursor-not-allowed" : ""} ${postClass}`}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`q-${q.id}`}
-                                  value={op.id}
-                                  className="w-4 h-4"
-                                  checked={checked || false}
-                                  disabled={disabled}
-                                  onChange={() => onSelect(q.id, op.id)}
-                                />
-                                <span className="text-gray-800">{op.texto_opcion}</span>
-                              </label>
-                            </li>
-                          );
-                        })}
+                        )}
                       </ul>
 
                       {/* Retro inmediata por reactivo */}
@@ -755,9 +792,20 @@ export default function VisualizarActividad() {
                               {d.esCorrecta ? "Correcta" : d.seleccion == null ? "Omitida" : "Incorrecta"}
                             </span>
                           </div>
-                          <div className="mt-2">
-                            <span className="text-gray-600">Respuesta correcta: </span>
-                            <span className="font-medium text-gray-800">{d.correctaTexto || "(sin texto)"}</span>
+                          <div className="mt-2 text-gray-700">
+                            <span className="text-gray-600">
+                              Respuesta correcta:{" "}
+                            </span>
+                            <div className="mt-1">
+                              <MarkdownPreview
+                                source={d.correctaTexto || "(sin texto)"}
+                                wrapperElement={{
+                                  "data-color-mode": "light",
+                                }}
+                                remarkPlugins={[remarkGfm, remarkMath]}
+                                rehypePlugins={[rehypeKatex]}
+                              />
+                            </div>
                           </div>
                           {d.retro ? (
                             <div className="mt-2 text-gray-700">
