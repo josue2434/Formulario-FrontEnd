@@ -420,6 +420,13 @@ export default function VisualizarActividad() {
 
         ordered = ordered.filter(Boolean);
 
+        console.debug("VisualizarActividad: tipo =", tipo, "id =", id);
+        console.debug("VisualizarActividad: meta.preguntaIds =", meta.preguntaIds);
+        console.debug(
+          "VisualizarActividad: ordered IDs (después de fetch) =",
+          ordered.map((q) => q.id)
+        );
+
         if (!cancel) {
           setActividad(meta.actividad);
           setPreguntas(ordered);
@@ -441,11 +448,11 @@ export default function VisualizarActividad() {
     };
   }, [tipo, id, headers]);
 
-  // Preguntas visibles (ignora primera y sin opciones)
+  // Preguntas visibles: EXACTAMENTE las cargadas, solo filtrando las que tengan opciones
   const visibles = useMemo(() => {
     const base = Array.isArray(preguntas) ? preguntas.filter(Boolean) : [];
-    const sinPrimera = base.slice(1);
-    return sinPrimera.filter(
+    // evitamos preguntas abiertas sin opciones
+    return base.filter(
       (q) => Array.isArray(q?.opciones) && q.opciones.length > 0
     );
   }, [preguntas]);
@@ -550,8 +557,7 @@ export default function VisualizarActividad() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         {visibles.length === 0 ? (
           <div className="text-gray-600">
-            No hay preguntas de opción múltiple para mostrar (la primera se
-            omite).
+            No hay preguntas de opción múltiple para mostrar.
           </div>
         ) : (
           <ol className="space-y-6" data-color-mode="light">
@@ -638,7 +644,6 @@ export default function VisualizarActividad() {
                                     disabled={disabled}
                                     onChange={() => onSelect(q.id, op.id)}
                                   />
-                                  {/* 👇 Opción renderizada con Markdown + LaTeX */}
                                   <div className="flex-1 text-sm text-gray-800">
                                     <MarkdownPreview
                                       source={op.texto_opcion || ""}
@@ -929,7 +934,6 @@ export default function VisualizarActividad() {
                             <span className="text-gray-600">
                               Respuesta correcta:{" "}
                             </span>
-                            {/* 👇 Texto de la respuesta correcta con LaTeX */}
                             <div className="mt-1">
                               <MarkdownPreview
                                 source={d.correctaTexto || "(sin texto)"}
