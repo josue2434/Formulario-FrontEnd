@@ -14,11 +14,19 @@ import "katex/dist/katex.min.css";
 const LS_SEL = "seleccion-preguntas";
 const LS_FORM = "crear-actividad-form";
 
+// 🔹 Normalizar tipo: quitar acentos y pasar a minúsculas
+const normalizeTipo = (t) =>
+  String(t || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
 export default function CrearActividad() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
-  const editTipo = searchParams.get("tipo");
+  const rawEditTipo = searchParams.get("tipo");
+  const editTipo = normalizeTipo(rawEditTipo);
   const isEdit = !!editId;
   const hydratedRef = useRef(false);
 
@@ -47,6 +55,7 @@ export default function CrearActividad() {
   const restante = Math.max(0, maxReactivos - seleccion.length);
   const topeAlcanzado = maxReactivos > 0 && seleccion.length >= maxReactivos;
 
+  /* ==================== LS helpers ==================== */
   const leerSeleccionLS = () => {
     try {
       const raw = localStorage.getItem(LS_SEL);
@@ -103,7 +112,7 @@ export default function CrearActividad() {
     } catch {}
   };
 
-  // Cargar datos (edición o desde localStorage)
+  /* ==================== Cargar datos (edición / crear) ==================== */
   useEffect(() => {
     const loadEdit = async () => {
       if (!isEdit || hydratedRef.current) return;
@@ -114,10 +123,11 @@ export default function CrearActividad() {
             ? `/actividad-examenes/${editId}`
             : `/actividad/practica/${editId}`;
 
-        const res = await api.get(endpoint);
+        const res = await api.get(endpoint, { validateStatus: () => true });
         const act = res.data?.actividad || res.data;
 
-        if (act) {
+        if (act && res.status === 200) {
+          // Guardamos tipo normalizado en estado
           setTipo(editTipo || "practica");
           setIdCurso(act.id_curso || 1);
           setNombre(act.nombre || "");
@@ -141,6 +151,8 @@ export default function CrearActividad() {
             setSeleccion(sel);
             persistirSeleccion(sel);
           }
+        } else {
+          setMsg({ ok: false, text: "No se pudo cargar la actividad." });
         }
       } catch {
         setMsg({ ok: false, text: "No se pudo cargar la actividad." });
@@ -149,11 +161,12 @@ export default function CrearActividad() {
       hydratedRef.current = true;
     };
 
-    if (isEdit) loadEdit();
-    else {
+    if (isEdit) {
+      loadEdit();
+    } else {
       const f = leerFormularioLS();
       if (f && Object.keys(f).length) {
-        if (typeof f.tipo === "string") setTipo(f.tipo);
+        if (typeof f.tipo === "string") setTipo(normalizeTipo(f.tipo));
         if (f.idCurso != null) setIdCurso(Number(f.idCurso));
         if (typeof f.nombre === "string") setNombre(f.nombre);
         if (typeof f.descripcion === "string") setDescripcion(f.descripcion);
@@ -170,16 +183,14 @@ export default function CrearActividad() {
         if (typeof f.aleatorizarOpciones === "boolean")
           setAleatorizarOpciones(f.aleatorizarOpciones);
       }
-    }
 
-    if (!isEdit) {
       const inicial = leerSeleccionLS();
       setSeleccion(inicial);
       persistirSeleccion(inicial);
     }
   }, []);
 
-  // Persistir formulario mientras se escribe (solo crear)
+  /* ==================== Persistencias varias ==================== */
   useEffect(() => {
     if (!isEdit) persistirFormulario();
   }, [
@@ -194,9 +205,9 @@ export default function CrearActividad() {
     tiempoLimite,
     aleatorizarPreguntas,
     aleatorizarOpciones,
+    isEdit,
   ]);
 
-  // Refrescar selección al volver del banco
   useEffect(() => {
     if (isEdit) return;
     const onFocus = () => {
@@ -208,7 +219,6 @@ export default function CrearActividad() {
     return () => window.removeEventListener("focus", onFocus);
   }, [maxReactivos, isEdit]);
 
-  // No permitir más de maxReactivos
   useEffect(() => {
     if (maxReactivos > 0 && seleccion.length > maxReactivos) {
       const trimmed = seleccion.slice(0, maxReactivos);
@@ -217,6 +227,7 @@ export default function CrearActividad() {
     }
   }, [maxReactivos, seleccion]);
 
+  /* ==================== Validaciones ==================== */
   const errores = useMemo(() => {
     const e = [];
     if (!idCurso) e.push("El curso es obligatorio.");
@@ -225,11 +236,9 @@ export default function CrearActividad() {
       e.push("La cantidad de reactivos debe ser mayor a 0.");
     if (Number(intentosPermitidos) <= 0)
       e.push("Los intentos permitidos deben ser mayor a 0.");
-    if (Number(umbralAprobacion) < 60)
-      e.push("Umbral mínimo 60.");
+    if (Number(umbralAprobacion) < 60) e.push("Umbral mínimo 60.");
 
-    if (seleccion.length === 0)
-      e.push("Debes seleccionar preguntas.");
+    if (seleccion.length === 0) e.push("Debes seleccionar preguntas.");
     else if (seleccion.length !== maxReactivos)
       e.push(
         `Seleccionaste ${seleccion.length} preguntas, deben ser ${maxReactivos}.`
@@ -255,53 +264,110 @@ export default function CrearActividad() {
     estado: true,
   });
 
+  /* ==================== Crear / Actualizar ==================== */
   const createActividad = async () => {
     const base = basePayload();
 
-    // PRÁCTICA
-    if (tipo === "practica") {
+    const preguntasPayload = seleccion.map((p, i) => ({
+      id: Number(p.id),
+      orden: i + 1,
+    }));
+
+    // Tipo real normalizado
+    const tipoActual = normalizeTipo(
+      isEdit ? rawEditTipo || tipo : tipo
+    );
+
+    console.log("DEBUG createActividad", {
+      isEdit,
+      editId,
+      tipoState: tipo,
+      rawEditTipo,
+      tipoActual,
+    });
+
+    // ===== PRÁCTICA =====
+    if (tipoActual === "practica") {
       const payload = {
         ...base,
-        preguntas: seleccion.map((p, i) => ({
-          id: Number(p.id),
-          orden: i + 1,
-        })),
+        preguntas: preguntasPayload,
       };
 
+      if (isEdit) {
+        // UPDATE
+        const res = await api.put(`/actividad/practica/${editId}`, payload, {
+          validateStatus: () => true,
+        });
+
+        if (res.status < 200 || res.status >= 300) {
+          throw new Error(
+            res.data?.message ||
+              res.data?.error ||
+              "Error al actualizar actividad práctica"
+          );
+        }
+
+        return Number(editId);
+      }
+
+      // CREATE
       const res = await api.post("/actividad/practica", payload, {
         validateStatus: () => true,
       });
 
-      if (res.status < 200 || res.status >= 300)
+      if (res.status < 200 || res.status >= 300) {
         throw new Error(res.data?.message || res.data?.error);
+      }
 
       return res.data.actividad.id;
     }
 
-    // EXAMEN: también enviamos preguntas
-    const payload = {
+    // ===== EXAMEN =====
+    const payloadExamen = {
       ...base,
       modo,
       tiempo_limite: tiempoLimite ? Number(tiempoLimite) : null,
       aleatorizar_preguntas: Boolean(aleatorizarPreguntas),
       aleatorizar_opciones: Boolean(aleatorizarOpciones),
-      preguntas: seleccion.map((p, i) => ({
-        id: Number(p.id),
-        orden: i + 1,
-      })),
+      preguntas: preguntasPayload,
     };
 
-    const res = await api.post("/actividad-examenes", payload, {
+    if (isEdit) {
+      // UPDATE
+      const res = await api.put(
+        `/actividad-examenes/${editId}`,
+        payloadExamen,
+        {
+          validateStatus: () => true,
+        }
+      );
+
+      if (res.status < 200 || res.status >= 300) {
+        throw new Error(
+          res.data?.message ||
+            (res.data?.errors
+              ? Object.values(res.data.errors)[0][0]
+              : res.data?.error) ||
+            "Error al actualizar examen"
+        );
+      }
+
+      return Number(editId);
+    }
+
+    // CREATE
+    const res = await api.post("/actividad-examenes", payloadExamen, {
       validateStatus: () => true,
     });
 
-    if (res.status < 200 || res.status >= 300)
+    if (res.status < 200 || res.status >= 300) {
       throw new Error(
         res.data?.message ||
           (res.data?.errors
             ? Object.values(res.data.errors)[0][0]
             : res.data?.error)
       );
+    }
 
     return res.data.actividad.id;
   };
@@ -315,15 +381,22 @@ export default function CrearActividad() {
 
     try {
       setSaving(true);
-      persistirFormulario();
+      if (!isEdit) persistirFormulario();
 
       const actividadId = await createActividad();
-      console.log("Actividad creada con id:", actividadId);
+      console.log(
+        isEdit
+          ? "Actividad actualizada con id:"
+          : "Actividad creada con id:",
+        actividadId
+      );
 
       limpiarPersistencia();
       setMsg({
         ok: true,
-        text: `Actividad ${tipo} creada correctamente.`,
+        text: `Actividad ${tipo} ${
+          isEdit ? "actualizada" : "creada"
+        } correctamente.`,
       });
 
       setTimeout(() => navigate("/docente/actividades"), 700);
@@ -356,6 +429,7 @@ export default function CrearActividad() {
     );
   };
 
+  /* ==================== UI ==================== */
   return (
     <div className="max-w-5xl mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">
@@ -372,7 +446,7 @@ export default function CrearActividad() {
           <label className="block text-sm font-medium">Tipo</label>
           <select
             value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
+            onChange={(e) => setTipo(normalizeTipo(e.target.value))}
             disabled={isEdit}
             className="w-full h-10 border border-gray-300 rounded-xl px-3"
           >
@@ -466,7 +540,7 @@ export default function CrearActividad() {
 
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium">Modo</label>
+                <label className="block text.sm font-medium">Modo</label>
                 <input
                   value={modo}
                   onChange={(e) => setModo(e.target.value)}
@@ -613,7 +687,13 @@ export default function CrearActividad() {
             disabled={saving}
             className="h-10 px-6 bg-purple-600 text-white rounded-xl"
           >
-            {saving ? "Guardando..." : "Guardar"}
+            {saving
+              ? isEdit
+                ? "Actualizando..."
+                : "Guardando..."
+              : isEdit
+              ? "Actualizar"
+              : "Guardar"}
           </button>
         </div>
 

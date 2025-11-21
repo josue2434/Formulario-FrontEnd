@@ -224,14 +224,20 @@ export default function VistaPreviaActividades() {
                     <Eye className="w-4 h-4" /> Visualizar
                   </button>
 
-                  <button
-                    onClick={() =>
-                      navigate(`/docente/crear-actividad?edit=${act.id}&tipo=${act.tipo_actividad.toLowerCase()}`)
-                    }
-                    className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
-                  >
-                    <Edit className="w-4 h-4" /> Editar
-                  </button>
+               <button
+  onClick={() =>
+    navigate(
+      `/docente/crear-actividad?edit=${act.id}&tipo=${
+        act.tipo_actividad === "Examen" ? "examen" : "practica"
+      }`
+    )
+  }
+  className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50"
+>
+  <Edit className="w-4 h-4" /> Editar
+</button>
+
+
                 </div>
               </div>
               {/* Panel de Resumen (expandible) */}
