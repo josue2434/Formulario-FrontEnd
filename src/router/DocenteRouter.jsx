@@ -11,6 +11,7 @@ import CrearPregunta from "../pages/docente/CrearPregunta";
 import SeleccionarPreguntas from "../pages/docente/SeleccionarPreguntas";
 import VistaPreviaActividades from "../pages/docente/VistaPreviaActividades";
 import VisualizarActividad from "../pages/docente/VisualizarActividad";
+import EditarActividad from "../pages/docente/EditarActividad";
 
 /**
  * Guard sencillo para validar el parámetro :tipo de la ruta visualizar/:tipo/:id
@@ -38,8 +39,10 @@ export default function DocenteRouter() {
 
         {/* /docente/banco-preguntas */}
         <Route path="banco-preguntas" element={<BancoPreguntas />} />
-        {/* Sub-página: sólo selección */}
-        <Route path="banco-preguntas/seleccionar" element={<SeleccionarPreguntas />} />
+        <Route
+          path="banco-preguntas/seleccionar"
+          element={<SeleccionarPreguntas />}
+        />
 
         {/* /docente/crear-actividad */}
         <Route path="crear-actividad" element={<CrearActividad />} />
@@ -47,17 +50,26 @@ export default function DocenteRouter() {
         {/* /docente/actividades */}
         <Route path="actividades" element={<VistaPreviaActividades />} />
 
+        {/* NUEVA: /docente/editar-actividad/:tipo/:id */}
+        <Route
+          path="editar-actividad/:tipo/:id"
+          element={<EditarActividad />}
+        />
+
         {/* /docente/crear-pregunta */}
         <Route path="crear-pregunta" element={<CrearPregunta />} />
 
-        {/* /docente/visualizar/:tipo/:id  (tipo = examen | practica) */}
-        <Route path="visualizar/:tipo/:id" element={<VisualizarActividadGuard />} />
+        {/* /docente/visualizar/:tipo/:id */}
+        <Route
+          path="visualizar/:tipo/:id"
+          element={<VisualizarActividadGuard />}
+        />
 
-        {/* Fallback dentro de /docente → regresa al índice de /docente */}
+        {/* Fallback dentro de /docente */}
         <Route path="*" element={<Navigate to="." replace />} />
       </Route>
 
-      {/* Si alguien entra a /docente/* sin layout, lo mandamos a /docente */}
+      {/* Fallback global */}
       <Route path="*" element={<Navigate to="/docente" replace />} />
     </Routes>
   );
