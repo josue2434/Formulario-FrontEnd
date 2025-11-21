@@ -12,7 +12,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import "katex/dist/katex.min.css";
 
-// 👇 Cliente axios que ya usas en todo el proyecto
+// Cliente axios que ya usas en todo el proyecto
 import api from "../../api/axiosClient";
 
 // URL base de la API
@@ -29,9 +29,9 @@ function decodeHtml(str) {
   return txt.value;
 }
 
-// =======================================================
-//  🔁 syncOpciones: creación/actualización sin borrado
-// =======================================================
+
+// syncOpciones: creación/actualización sin borrado
+
 async function syncOpciones({
   API,
   pid,
@@ -130,9 +130,9 @@ async function syncOpciones({
   if (typeof setOpIdsState === "function") setOpIdsState(nuevosIds);
 }
 
-// =======================================================
+
 //  COMPONENTE PRINCIPAL
-// =======================================================
+
 export default function CrearPregunta() {
   const navigate = useNavigate();
   const [search] = useSearchParams();
@@ -196,9 +196,9 @@ export default function CrearPregunta() {
     }
   };
 
-  // =======================================================
+
   //  Cargar catálogos
-  // =======================================================
+  
   useEffect(() => {
     const fetchCatalogos = async () => {
       try {
@@ -225,9 +225,9 @@ export default function CrearPregunta() {
     fetchCatalogos();
   }, []);
 
-  // =======================================================
+ 
   //  Cargar datos al editar
-  // =======================================================
+  
   useEffect(() => {
     const loadEdit = async () => {
       if (!isEdit || loading || hydratedRef.current) return;
@@ -305,9 +305,9 @@ export default function CrearPregunta() {
   const isVerdaderoFalso = selectedTipo ? /verdadero|falso/.test(tipoNombre) : tipo === "2";
   const isAbierta = selectedTipo ? /abierta|texto/.test(tipoNombre) : tipo === "3";
 
-  // =======================================================
+ 
   // Guardar / Crear
-  // =======================================================
+ 
   const guardar = async (e) => {
     e.preventDefault();
     setMsg(null);
@@ -333,9 +333,9 @@ export default function CrearPregunta() {
         estado: 1,
       };
 
-      // =======================
+    
       // UPDATE (usa axios api)
-      // =======================
+      
       if (isEdit) {
         try {
           await api.put(`/preguntas/${editId}`, bodyPregunta);
@@ -368,15 +368,15 @@ export default function CrearPregunta() {
           }
         }
 
-        setMsg({ ok: true, text: "✅ Pregunta actualizada correctamente" });
+        setMsg({ ok: true, text: " Pregunta actualizada correctamente" });
         setTimeout(() => navigate("/docente/banco-preguntas"), 600);
         setSaving(false);
         return;
       }
 
-      // =======================
+   
       // CREATE (usa axios api)
-      // =======================
+      
       let preguntaData;
       try {
         const resp = await api.post("/preguntas", bodyPregunta);
@@ -442,7 +442,7 @@ export default function CrearPregunta() {
         );
         setMsg({
           ok: true,
-          text: "✅ Pregunta creada (no se detectó ID para registrar las opciones).",
+          text: " Pregunta creada (no se detectó ID para registrar las opciones).",
         });
         setTimeout(() => navigate("/docente/banco-preguntas"), 700);
         return;
@@ -496,7 +496,7 @@ export default function CrearPregunta() {
         }
       }
 
-      setMsg({ ok: true, text: "✅ Pregunta creada correctamente" });
+      setMsg({ ok: true, text: " Pregunta creada correctamente" });
       setTimeout(() => navigate("/docente/banco-preguntas"), 700);
     } catch (err) {
       console.error(err);
@@ -506,9 +506,9 @@ export default function CrearPregunta() {
     }
   };
 
-  // =======================================================
+ 
   // UI
-  // =======================================================
+  
   const prettyTipo =
     selectedTipo?.tipo ||
     (isOpcionMultiple ? "Opción múltiple" : isVerdaderoFalso ? "Verdadero/Falso" : "—");

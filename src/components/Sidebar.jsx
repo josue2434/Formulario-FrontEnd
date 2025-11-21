@@ -4,7 +4,7 @@ import { LayoutDashboard, User, BookOpen, FileEdit, LogOut, ClipboardList } from
 export default function Sidebar() {
   const navigate = useNavigate()
 
-  // 🔹 Función para cerrar sesión
+  // Función para cerrar sesión
   const handleLogout = () => {
     // Aquí puedes limpiar el token o datos del usuario
     localStorage.removeItem("token") 

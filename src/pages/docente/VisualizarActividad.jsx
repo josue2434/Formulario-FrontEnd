@@ -11,7 +11,7 @@ import "katex/dist/katex.min.css";
 
 const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
-/* ==================== Utils ==================== */
+/* Utils*/
 const safeJson = async (res) => {
   try {
     return await res.clone().json();
@@ -61,7 +61,7 @@ const decodeHtml = (str) => {
   }
 };
 
-/* ===== Helpers de evaluación y Bloom ===== */
+/* Helpers de evaluación y Bloom  */
 const getRetroMode = (actividad) => {
   return (
     actividad?.retroalimentacion ??
@@ -150,7 +150,7 @@ const gradeAttempt = (preguntas = [], respuestas = {}) => {
   return { puntaje, total, correctas, incorrectas, omitidas, detalle, porBloom };
 };
 
-/* ==================== Fetch helpers ==================== */
+/* Fetch helpers  */
 async function fetchActividadYMapeo(tipo, id, headers) {
   const out = {
     actividad: null,
@@ -335,7 +335,7 @@ async function fetchPreguntaConOpciones(pid, headers) {
   return p;
 }
 
-/* ==================== Componente ==================== */
+/*  Componente */
 export default function VisualizarActividad() {
   const { tipo, id } = useParams(); // 'examen' | 'practica'
   const navigate = useNavigate();
@@ -372,7 +372,7 @@ export default function VisualizarActividad() {
       try {
         const meta = await fetchActividadYMapeo(tipo, id, headers);
 
-        // 🔥 Camino rápido: si el backend YA mandó preguntas con opciones (examen)
+        // Camino rápido: si el backend YA mandó preguntas con opciones (examen)
         if (
           Array.isArray(meta.preguntasPreCargadas) &&
           meta.preguntasPreCargadas.length
@@ -558,7 +558,7 @@ export default function VisualizarActividad() {
     return fase === "final";
   };
 
-  /* ==================== Render ==================== */
+  /*  Render  */
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto">

@@ -8,24 +8,24 @@ export default function VistaPreviaActividades() {
   const navigate = useNavigate();
   const { usuario } = useAuth();
 
-  // ===== Estado =====
+  //  Estado 
   const [actividades, setActividades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null); // Para expandir resumen
   const [docenteId, setDocenteId] = useState(null);
 
-  // ===== Filtros =====
+  //  Filtros 
   const [q, setQ] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | examen | practica
 
-  // ===== Helpers =====
+  // Helpers 
   const extractDocenteId = (src) =>
     src?.docente?.id ?? src?.usuario?.docente?.id ?? src?.data?.docente?.id ?? null;
 
   const getActividadDocenteId = (act) => act?.id_docente ?? act?.docente?.id ?? null;
 
-  // ===== Carga de datos =====
+  //  Carga de datos 
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
@@ -72,7 +72,7 @@ export default function VistaPreviaActividades() {
     loadAll();
   }, [usuario]);
 
-  // ===== Lista filtrada =====
+  //  Lista filtrada 
   const actividadesFiltradas = useMemo(() => {
     if (!docenteId) return [];
 
@@ -94,7 +94,7 @@ export default function VistaPreviaActividades() {
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [actividades, docenteId, q, filtroTipo]);
 
-  // ===== Manejador de Archivar =====
+  //  Manejador de Archivar 
   const handleArchive = async (actividad) => {
     const confirmacion = window.confirm(
       `¿Estás seguro de que quieres archivar la actividad "${actividad.nombre}"?`

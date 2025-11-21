@@ -14,7 +14,7 @@ import "katex/dist/katex.min.css";
 const LS_SEL = "seleccion-preguntas";
 const LS_FORM = "crear-actividad-form";
 
-// 🔹 Normalizar tipo: quitar acentos y pasar a minúsculas
+//  Normalizar tipo: quitar acentos y pasar a minúsculas
 const normalizeTipo = (t) =>
   String(t || "")
     .normalize("NFD")
@@ -55,7 +55,7 @@ export default function CrearActividad() {
   const restante = Math.max(0, maxReactivos - seleccion.length);
   const topeAlcanzado = maxReactivos > 0 && seleccion.length >= maxReactivos;
 
-  /* ==================== LS helpers ==================== */
+  /* LS helpers  */
   const leerSeleccionLS = () => {
     try {
       const raw = localStorage.getItem(LS_SEL);
@@ -112,7 +112,7 @@ export default function CrearActividad() {
     } catch {}
   };
 
-  /* ==================== Cargar datos (edición / crear) ==================== */
+  /*  Cargar datos (edición / crear)  */
   useEffect(() => {
     const loadEdit = async () => {
       if (!isEdit || hydratedRef.current) return;
@@ -190,7 +190,7 @@ export default function CrearActividad() {
     }
   }, []);
 
-  /* ==================== Persistencias varias ==================== */
+  /*  Persistencias varias  */
   useEffect(() => {
     if (!isEdit) persistirFormulario();
   }, [
@@ -227,7 +227,7 @@ export default function CrearActividad() {
     }
   }, [maxReactivos, seleccion]);
 
-  /* ==================== Validaciones ==================== */
+  /*  Validaciones  */
   const errores = useMemo(() => {
     const e = [];
     if (!idCurso) e.push("El curso es obligatorio.");
@@ -264,7 +264,7 @@ export default function CrearActividad() {
     estado: true,
   });
 
-  /* ==================== Crear / Actualizar ==================== */
+  /*  Crear / Actualizar  */
   const createActividad = async () => {
     const base = basePayload();
 
@@ -286,7 +286,7 @@ export default function CrearActividad() {
       tipoActual,
     });
 
-    // ===== PRÁCTICA =====
+    //  PRÁCTICA 
     if (tipoActual === "practica") {
       const payload = {
         ...base,
@@ -322,7 +322,7 @@ export default function CrearActividad() {
       return res.data.actividad.id;
     }
 
-    // ===== EXAMEN =====
+    //  EXAMEN 
     const payloadExamen = {
       ...base,
       modo,

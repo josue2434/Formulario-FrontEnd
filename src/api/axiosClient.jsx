@@ -16,7 +16,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// ================== LOGIN ==================
+// LOGIN 
 // Llama a POST /login con {correo, clave}
 export async function doLogin(correo, clave) {
   const { data } = await api.post("/login", { correo, clave });
@@ -28,7 +28,7 @@ export async function doLogin(correo, clave) {
   return data;
 }
 
-// ================== LOGOUT ==================
+//  LOGOUT 
 // Llama a POST /logout y limpia almacenamiento
 export async function doLogout() {
   try {
@@ -40,7 +40,7 @@ export async function doLogout() {
   localStorage.removeItem("usuario");
 }
 
-// ================== REGISTRO ALUMNO ==================
+// REGISTRO ALUMNO
 // Llama a POST /singup/usuario/alumno
 // payload = { nombre, correo, clave, escolaridad, foto_perfil? }
 export async function registerAlumno(payload) {

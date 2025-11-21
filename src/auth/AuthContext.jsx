@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   });
   const [isAuth, setIsAuth] = useState(!!localStorage.getItem("token"));
 
-  // ===== Login (usa /api/login con {correo, clave}) =====
+  // Login (usa /api/login con {correo, clave}) 
   const login = async (correo, clave) => {
     const data = await doLogin(correo, clave); // guarda token + usuario en localStorage (axiosClient)
     setIsAuth(true);
@@ -24,14 +24,14 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // ===== Logout (POST /api/logout) =====
+  //  Logout (POST /api/logout) 
   const logout = async () => {
     await doLogout(); // borra token + usuario en localStorage
     setIsAuth(false);
     setUsuario(null);
   };
 
-  // ===== Registro Alumno (POST /api/singup/usuario/alumno) =====
+  // Registro Alumno (POST /api/singup/usuario/alumno) 
   // payload: { nombre, correo, clave, escolaridad, foto_perfil? }
   const signupAlumno = async ({ nombre, correo, clave, escolaridad, foto_perfil }) => {
     const data = await registerAlumno({ nombre, correo, clave, escolaridad, foto_perfil });
@@ -40,7 +40,7 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // ===== Detectar rol por endpoints protegidos =====
+  //  Detectar rol por endpoints protegidos 
   // Estrategia:
   //   1) GET /api/usuario/alumno -> si 200 => /alumno
   //   2) GET /api/usuario/docente -> si 200 => /docente o /admin (si es_superusuario)
@@ -84,7 +84,7 @@ const detectRole = async () => {
 };
 
 
-  // ===== Redirigir según rol detectado =====
+  //  Redirigir según rol detectado 
 const resolveRoleAndRedirect = async (navigate) => {
   const { route, role } = await detectRole();
   if (role === "desconocido") {
