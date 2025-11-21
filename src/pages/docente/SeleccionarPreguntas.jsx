@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import api from "../../api/axiosClient";
 
-// 👇 IMPORTS SOLO PARA MOSTRAR MARKDOWN + LaTeX
+//IMPORTS SOLO PARA MOSTRAR MARKDOWN + LaTeX
 import MarkdownPreview from "@uiw/react-markdown-preview";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -16,11 +16,11 @@ export default function SeleccionarPreguntas() {
   const location = useLocation();
   const { usuario } = useAuth();
 
-  // ===== query params =====
+  // query params
   const params = new URLSearchParams(location.search);
   const returnTo = params.get("returnTo") || "/docente/crear-actividad";
 
-  // ===== estado principal =====
+  //  estado principal 
   const [preguntas, setPreguntas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,7 +53,7 @@ export default function SeleccionarPreguntas() {
     }
   });
 
-  // ===== helpers =====
+  //  helpers 
   const unwrapList = (j, keys = []) => {
     if (Array.isArray(j)) return j;
     for (const k of keys) if (Array.isArray(j?.[k])) return j[k];
@@ -94,7 +94,7 @@ export default function SeleccionarPreguntas() {
     navigate(returnTo, { replace: true });
   };
 
-  // ===== carga inicial =====
+  //  carga inicial 
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
@@ -134,7 +134,7 @@ export default function SeleccionarPreguntas() {
     loadAll();
   }, [usuario]);
 
-  // ===== lookups =====
+  // lookups 
   const L = useMemo(() => {
     const toMap = (arr, key = "id") =>
       arr.reduce((acc, it) => {
@@ -150,7 +150,7 @@ export default function SeleccionarPreguntas() {
     };
   }, [temas, blooms, difs, tipos]);
 
-  // ===== lista filtrada (sólo propias, no archivadas) =====
+  // lista filtrada (sólo propias, no archivadas) 
   const list = useMemo(() => {
     if (docenteId == null) return [];
     const text = q.trim().toLowerCase();
@@ -321,7 +321,7 @@ export default function SeleccionarPreguntas() {
                       onChange={() => togglePick(p.id)}
                     />
                     <div className="flex-1">
-                      {/* 👇 AQUÍ AHORA SE RENDERIZA MARKDOWN + LaTeX */}
+                      {/* AQUÍ AHORA SE RENDERIZA MARKDOWN + LaTeX */}
                       <div className="font-semibold text-gray-800 mb-1">
                         <MarkdownPreview
                           source={p.texto_pregunta || "Sin texto"}

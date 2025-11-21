@@ -16,7 +16,7 @@ export function QuestionEditor({ value = "", onChange, resetKey }) {
   // Estado interno para asegurarnos de reflejar cambios del padre
   const [v, setV] = useState(value || "");
 
-  // 🔧 CLAVE: sincronizar cuando la prop value cambie (ej. tras fetch al editar)
+  // CLAVE: sincronizar cuando la prop value cambie (ej. tras fetch al editar)
   useEffect(() => {
     setV(value || "");
   }, [value]);

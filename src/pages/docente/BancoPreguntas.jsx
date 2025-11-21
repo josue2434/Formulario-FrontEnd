@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import api from "../../api/axiosClient";
 
-// 👇 NUEVO: imports para markdown + LaTeX
+//  NUEVO: imports para markdown + LaTeX
 import MarkdownPreview from "@uiw/react-markdown-preview";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -15,8 +15,7 @@ export default function BancoPreguntas() {
   const navigate = useNavigate();
   const { usuario } = useAuth();
 
-  // ================== Estado principal ==================
-  const [preguntas, setPreguntas] = useState([]);
+  //  Estado principal 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -39,7 +38,7 @@ export default function BancoPreguntas() {
 
   const handleNueva = () => navigate("/docente/crear-pregunta");
 
-  // ================== Helpers ==================
+  //  Helpers 
   const unwrapList = (j, keys = []) => {
     if (Array.isArray(j)) return j;
     for (const k of keys) if (Array.isArray(j?.[k])) return j[k];
@@ -78,7 +77,7 @@ export default function BancoPreguntas() {
     ...overrides,
   });
 
-  // ✅ ids como number y estado como boolean real (Laravel: required|boolean)
+  //  como number y estado como boolean real (Laravel: required|boolean)
   const normalizeIdsToNumber = (payload) => ({
     ...payload,
     id_tema: payload.id_tema != null ? Number(payload.id_tema) : null,
@@ -94,7 +93,7 @@ export default function BancoPreguntas() {
         : true,
   });
 
-  // PUT → PATCH → POST _method=PUT
+  // PUT PATCH  POST _method=PUT
   const tryMultiUpdate = async (id, payloadObj) => {
     // A) PUT JSON
     let res = await api.put(`/preguntas/${id}`, payloadObj, { validateStatus: () => true });
@@ -118,7 +117,7 @@ export default function BancoPreguntas() {
     return res;
   };
 
-  // ================== Carga inicial ==================
+  // Carga inicial 
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
@@ -172,7 +171,7 @@ export default function BancoPreguntas() {
     loadAll();
   }, [usuario]);
 
-  // ================== LOOKUPS ==================
+  //  LOOKUPS 
   const L = useMemo(() => {
     const toMap = (arr, key = "id") =>
       arr.reduce((acc, it) => {
@@ -188,13 +187,13 @@ export default function BancoPreguntas() {
     };
   }, [temas, blooms, difs, tipos]);
 
-  // ================== Permisos UI ==================
+  //  Permisos UI 
   const puedeGestionar = (p) => {
     if (docenteId == null) return false;
     return String(getPreguntaDocenteId(p)) === String(docenteId);
   };
 
-  // ================== Lista filtrada ==================
+  //  Lista filtrada 
   const list = useMemo(() => {
     if (docenteId == null) return [];
     const text = q.trim().toLowerCase();
@@ -214,7 +213,7 @@ export default function BancoPreguntas() {
       );
   }, [preguntas, fTema, fBloom, fDif, fTipo, q, verArchivadas, docenteId, L]);
 
-  // ================== Chips filtros activos ==================
+  //  Chips filtros activos 
   const activeFilters = useMemo(() => {
     const items = [];
     if (q.trim()) items.push({ key: "q", label: `Buscar: “${q.trim()}”`, clear: () => setQ("") });
@@ -249,7 +248,7 @@ export default function BancoPreguntas() {
     setVerArchivadas(false);
   };
 
-  // ================== Chips por pregunta ==================
+  //  Chips por pregunta 
   const getChips = (p) => {
     const tipoLabel =
       p?.tipo_pregunta?.tipo ?? L.tipos[String(p.id_tipo_pregunta)]?.tipo ?? null;
@@ -269,7 +268,7 @@ export default function BancoPreguntas() {
     return chips;
   };
 
-  // ================== Acciones: archivar / desarchivar ==================
+  // Acciones: archivar / desarchivar
   const archivePregunta = async (id) => {
     const p = preguntas.find((x) => Number(x.id) === Number(id));
     if (!p) throw new Error("No se encontró la pregunta en memoria.");
@@ -358,7 +357,7 @@ export default function BancoPreguntas() {
 
   const handleEdit = (id) => navigate(`/docente/crear-pregunta?edit=${id}`);
 
-  // ================== Render ==================
+  //  Render 
   return (
     <div>
       {/* Encabezado */}
@@ -479,7 +478,7 @@ export default function BancoPreguntas() {
                   <div key={p.id} className="p-4 border rounded-lg bg-gray-50 hover:shadow-sm transition-shadow">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        {/* 👇 AQUÍ se renderiza LaTeX */}
+                        {/*AQUÍ se renderiza LaTeX */}
                         <div className="font-semibold text-gray-800 mb-1">
                           <MarkdownPreview
                             source={p.texto_pregunta || "Sin texto"}

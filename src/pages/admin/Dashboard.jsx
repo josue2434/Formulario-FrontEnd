@@ -8,7 +8,7 @@ export default function Dashboard() {
     <div>
       <h1 className="text-2xl font-bold mb-4">Panel del Superusuario</h1>
       <p className="text-gray-600 mb-6">
-        Bienvenido {usuario?.nombre || "Superusuario"} 👋
+        Bienvenido {usuario?.nombre || "Superusuario"} 
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

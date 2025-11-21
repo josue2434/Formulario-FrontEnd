@@ -35,7 +35,7 @@ export default function SidebarAlumno() {
       label: "Mis Cursos",
     },
     {
-      path: "/alumno/actividades", // 👈 NUEVO
+      path: "/alumno/actividades", // NUEVO
       icon: ClipboardList,
       label: "Actividades",
     },

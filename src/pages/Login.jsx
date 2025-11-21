@@ -8,13 +8,13 @@ export default function Login() {
 
   const [tab, setTab] = useState("login"); // "login" | "signup"
 
-  // ---- Login state ----
+  // Login state 
   const [loginForm, setLoginForm] = useState({ correo: "", clave: "" });
   const [showPwdLogin, setShowPwdLogin] = useState(false);
   const [loginError, setLoginError] = useState("");     // ← FALTABA
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // ---- Signup state ----
+  //  Signup state 
   const [signupForm, setSignupForm] = useState({
     nombre: "",
     correo: "",
@@ -27,7 +27,7 @@ export default function Login() {
   const [signupLoading, setSignupLoading] = useState(false);
   const [preview, setPreview] = useState(null);
 
-  // ---- Handlers ----
+  //  Handlers 
   const onSubmitLogin = async (e) => {
     e.preventDefault();
     setLoginError("");
