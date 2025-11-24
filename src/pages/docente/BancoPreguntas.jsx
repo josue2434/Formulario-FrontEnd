@@ -19,6 +19,9 @@ export default function BancoPreguntas() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // 🔹 AQUÍ FALTABA ESTE ESTADO
+  const [preguntas, setPreguntas] = useState([]);
+
   // Catálogos
   const [temas, setTemas] = useState([]);
   const [blooms, setBlooms] = useState([]);
@@ -77,7 +80,7 @@ export default function BancoPreguntas() {
     ...overrides,
   });
 
-  //  como number y estado como boolean real (Laravel: required|boolean)
+  //  IDs como number y estado como boolean real (Laravel: required|boolean)
   const normalizeIdsToNumber = (payload) => ({
     ...payload,
     id_tema: payload.id_tema != null ? Number(payload.id_tema) : null,
@@ -478,7 +481,7 @@ export default function BancoPreguntas() {
                   <div key={p.id} className="p-4 border rounded-lg bg-gray-50 hover:shadow-sm transition-shadow">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        {/*AQUÍ se renderiza LaTeX */}
+                        {/* AQUÍ se renderiza LaTeX */}
                         <div className="font-semibold text-gray-800 mb-1">
                           <MarkdownPreview
                             source={p.texto_pregunta || "Sin texto"}
